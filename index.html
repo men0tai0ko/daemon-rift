@@ -1,11 +1,17 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.3.1
+  Version : 0.3.2
   Updated : 2026-03-20
   Author  : ののやま
 ================================================================
   CHANGELOG
+  v0.3.2 (2026-03-20)
+    - UIモジュール（UIオブジェクト）をグローバル関数群から独立分離
+      (renderExplore / renderPartyBar / renderEnemyHP / setBattleLog /
+       addLog / playEnemyHitAnim / renderFusionScreen / renderPartyScreen)
+    - グローバル関数はUI.xxxへの後方互換ラッパーとして残置
+    - Phase 3 アニメーション追加の受け皿を整備
   v0.3.1 (2026-03-20)
     - FUSIONモジュールをGから独立分離
       (selectSlot / selectDemon / execute / toggleParty)
@@ -35,7 +41,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.3.1">
+<meta name="version" content="0.3.2">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <style>
@@ -311,7 +317,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.3.2';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -503,124 +509,137 @@ function updateBestFloor(){
 
 // ================================================================
 // [BLOCK: UI] UI描画・DOM操作
-// ゲームロジックを持たず、STATE / ENGINE の結果を表示するのみにすること
+// 責務: STATE / ENGINE の結果をDOMに反映するのみ（ロジック非依存）
+// Phase 3 でアニメーション・エフェクト処理を追加予定
 // 将来の分割先: ui.js
 // ================================================================
+const UI = {
 
-// 探索画面を最新 STATE で全更新する
-function renderExplore(){
-  document.getElementById('floor-display').textContent=`B${STATE.floor}F`;
-  document.getElementById('macca-display').textContent=STATE.macca;
-  document.getElementById('progress-bar').style.width=`${(STATE.floorProgress/5)*100}%`;
-  document.getElementById('progress-label-num').textContent=`${STATE.floorProgress} / 5`;
-  document.getElementById('progress-label-text').textContent=STATE.floor%10===0?'⚠ ボスフロア':'フロア進行';
-  document.getElementById('btn-explore-toggle').textContent=STATE.exploring?'⏸ 探索停止':'▶ 探索開始';
-  const area=[...AREAS].reverse().find(a=>STATE.floor>=a.minFloor);
-  document.getElementById('area-name').textContent=area?.name??'廃都表層';
-  renderPartyBar();
-}
+  // 探索画面を最新 STATE で全更新する
+  renderExplore() {
+    document.getElementById('floor-display').textContent = `B${STATE.floor}F`;
+    document.getElementById('macca-display').textContent = STATE.macca;
+    document.getElementById('progress-bar').style.width = `${(STATE.floorProgress / 5) * 100}%`;
+    document.getElementById('progress-label-num').textContent = `${STATE.floorProgress} / 5`;
+    document.getElementById('progress-label-text').textContent = STATE.floor % 10 === 0 ? '⚠ ボスフロア' : 'フロア進行';
+    document.getElementById('btn-explore-toggle').textContent = STATE.exploring ? '⏸ 探索停止' : '▶ 探索開始';
+    const area = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor);
+    document.getElementById('area-name').textContent = area?.name ?? '廃都表層';
+    UI.renderPartyBar();
+  },
 
-// パーティバーを描画する
-function renderPartyBar(){
-  const list=document.getElementById('party-list');
-  list.innerHTML='';
-  for(let i=0;i<3;i++){
-    const d=STATE.party[i],card=document.createElement('div');
-    if(!d){
-      card.className='party-card empty';
-      card.innerHTML='<div style="font-size:22px;opacity:.3">＋</div>';
-    }else{
-      const p=(d.hp/d.maxHp)*100,bc=p>50?'':p>25?'low':'critical';
-      card.className=`party-card ${d.hp<=0?'dead':''}`;
-      card.innerHTML=`<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div>`;
+  // パーティバーを描画する
+  renderPartyBar() {
+    const list = document.getElementById('party-list');
+    list.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const d = STATE.party[i], card = document.createElement('div');
+      if (!d) {
+        card.className = 'party-card empty';
+        card.innerHTML = '<div style="font-size:22px;opacity:.3">＋</div>';
+      } else {
+        const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
+        card.className = `party-card ${d.hp <= 0 ? 'dead' : ''}`;
+        card.innerHTML = `<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div>`;
+      }
+      list.appendChild(card);
     }
-    list.appendChild(card);
-  }
-}
+  },
 
-// 戦闘画面の敵HPバーを更新する
-function renderEnemyHP(){
-  const e=STATE.currentEnemy,p=Math.max(0,(e.hp/e.maxHp)*100);
-  document.getElementById('enemy-hp-bar').style.width=`${p}%`;
-  document.getElementById('enemy-hp-text').textContent=`HP: ${Math.max(0,e.hp)} / ${e.maxHp}`;
-}
+  // 戦闘画面の敵HPバーを更新する
+  renderEnemyHP() {
+    const e = STATE.currentEnemy, p = Math.max(0, (e.hp / e.maxHp) * 100);
+    document.getElementById('enemy-hp-bar').style.width = `${p}%`;
+    document.getElementById('enemy-hp-text').textContent = `HP: ${Math.max(0, e.hp)} / ${e.maxHp}`;
+  },
 
-// 戦闘ログを更新する（フェードアニメーション付き）
-function setBattleLog(msg){
-  const el=document.getElementById('battle-log');
-  el.textContent=msg;el.style.animation='none';void el.offsetWidth;el.style.animation='';
-}
+  // 戦闘ログを更新する（フェードアニメーション付き）
+  setBattleLog(msg) {
+    const el = document.getElementById('battle-log');
+    el.textContent = msg; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+  },
 
-// 探索ログに1行追加する（最大50行）
-function addLog(msg,type=''){
-  const log=document.getElementById('explore-log');
-  const el=document.createElement('div');
-  el.className=`log-entry ${type}`;el.textContent=msg;
-  log.appendChild(el);log.scrollTop=log.scrollHeight;
-  while(log.children.length>50)log.removeChild(log.firstChild);
-}
+  // 探索ログに1行追加する（最大50行）
+  addLog(msg, type = '') {
+    const log = document.getElementById('explore-log');
+    const el = document.createElement('div');
+    el.className = `log-entry ${type}`; el.textContent = msg;
+    log.appendChild(el); log.scrollTop = log.scrollHeight;
+    while (log.children.length > 50) log.removeChild(log.firstChild);
+  },
 
-// 敵スプライトのヒットアニメーションを再生する
-function playEnemyHitAnim(){
-  const s=document.getElementById('enemy-sprite');
-  s.classList.remove('enemy-hit');void s.offsetWidth;
-  s.classList.add('enemy-hit');setTimeout(()=>s.classList.remove('enemy-hit'),300);
-}
+  // 敵スプライトのヒットアニメーションを再生する
+  playEnemyHitAnim() {
+    const s = document.getElementById('enemy-sprite');
+    s.classList.remove('enemy-hit'); void s.offsetWidth;
+    s.classList.add('enemy-hit'); setTimeout(() => s.classList.remove('enemy-hit'), 300);
+  },
 
-// 合体ラボ画面を描画する
-function renderFusionScreen(){
-  const{fusionA:sA,fusionB:sB}=STATE;
-  function fillSlot(side,d){
-    const el=document.getElementById(`fusion-slot-${side}`);
-    if(d){
-      el.classList.add('filled');
-      document.getElementById(`fusion-slot-${side}-emoji`).textContent=d.emoji;
-      document.getElementById(`fusion-slot-${side}-name`).textContent=d.name;
-      document.getElementById(`fusion-slot-${side}-info`).textContent=`Lv${d.lv} ${d.race}`;
-    }else{
-      el.classList.remove('filled');
-      document.getElementById(`fusion-slot-${side}-emoji`).textContent='＋';
-      document.getElementById(`fusion-slot-${side}-name`).textContent=`素材 ${side.toUpperCase()}`;
-      document.getElementById(`fusion-slot-${side}-info`).textContent='タップで選択';
-    }
-  }
-  fillSlot('a',sA);fillSlot('b',sB);
-  const preview=document.getElementById('fusion-preview');
-  if(sA&&sB){
-    const r=getFusionResult(sA,sB);
-    if(r){
-      preview.classList.add('active');
-      document.getElementById('fusion-result-emoji').textContent=r.emoji;
-      document.getElementById('fusion-result-name').textContent=`${r.name} Lv${r.lv}`;
-      document.getElementById('fusion-result-skill').textContent=`継承スキル: ${r.skill}`;
-    }else{preview.classList.remove('active');showToast('この組み合わせは合体できない');}
-  }else{preview.classList.remove('active');}
-  const list=document.getElementById('fusion-demon-list');
-  list.innerHTML='';
-  [...STATE.party,...STATE.storage].forEach(d=>{
-    const isA=STATE.fusionA?.uid===d.uid,isB=STATE.fusionB?.uid===d.uid;
-    const el=document.createElement('div');
-    el.className=`fusion-demon-item ${(isA||isB)?'selected':''}`;
-    el.innerHTML=`<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span>${d.inParty?' <span class="tag party-tag">PARTY</span>':''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA?'[A]':isB?'[B]':''}</div>`;
-    el.onclick=()=>G.selectFusionDemon(d.uid);
-    list.appendChild(el);
-  });
-}
+  // 合体ラボ画面を描画する
+  renderFusionScreen() {
+    const { fusionA: sA, fusionB: sB } = STATE;
+    const fillSlot = (side, d) => {
+      const el = document.getElementById(`fusion-slot-${side}`);
+      if (d) {
+        el.classList.add('filled');
+        document.getElementById(`fusion-slot-${side}-emoji`).textContent = d.emoji;
+        document.getElementById(`fusion-slot-${side}-name`).textContent = d.name;
+        document.getElementById(`fusion-slot-${side}-info`).textContent = `Lv${d.lv} ${d.race}`;
+      } else {
+        el.classList.remove('filled');
+        document.getElementById(`fusion-slot-${side}-emoji`).textContent = '＋';
+        document.getElementById(`fusion-slot-${side}-name`).textContent = `素材 ${side.toUpperCase()}`;
+        document.getElementById(`fusion-slot-${side}-info`).textContent = 'タップで選択';
+      }
+    };
+    fillSlot('a', sA); fillSlot('b', sB);
+    const preview = document.getElementById('fusion-preview');
+    if (sA && sB) {
+      const r = getFusionResult(sA, sB);
+      if (r) {
+        preview.classList.add('active');
+        document.getElementById('fusion-result-emoji').textContent = r.emoji;
+        document.getElementById('fusion-result-name').textContent = `${r.name} Lv${r.lv}`;
+        document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}`;
+      } else { preview.classList.remove('active'); showToast('この組み合わせは合体できない'); }
+    } else { preview.classList.remove('active'); }
+    const list = document.getElementById('fusion-demon-list');
+    list.innerHTML = '';
+    [...STATE.party, ...STATE.storage].forEach(d => {
+      const isA = STATE.fusionA?.uid === d.uid, isB = STATE.fusionB?.uid === d.uid;
+      const el = document.createElement('div');
+      el.className = `fusion-demon-item ${(isA || isB) ? 'selected' : ''}`;
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span>${d.inParty ? ' <span class="tag party-tag">PARTY</span>' : ''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA ? '[A]' : isB ? '[B]' : ''}</div>`;
+      el.onclick = () => G.selectFusionDemon(d.uid);
+      list.appendChild(el);
+    });
+  },
 
-// 仲魔一覧画面を描画する
-function renderPartyScreen(){
-  const content=document.getElementById('party-screen-content');
-  content.innerHTML='';
-  const all=[...STATE.party,...STATE.storage];
-  if(!all.length){content.innerHTML='<div style="color:var(--muted);text-align:center;padding:40px;font-size:13px">仲魔がいない</div>';return;}
-  all.forEach(d=>{
-    const p=(d.hp/d.maxHp)*100,bc=p>50?'':p>25?'low':'critical';
-    const el=document.createElement('div');
-    el.className=`demon-card-full ${d.inParty?'in-party':''}`;
-    el.innerHTML=`<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty?'<span class="tag party-tag">PARTY</span>':''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0,d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty?'warn':'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty?'外す':'パーティ'}</button>`;
-    content.appendChild(el);
-  });
-}
+  // 仲魔一覧画面を描画する
+  renderPartyScreen() {
+    const content = document.getElementById('party-screen-content');
+    content.innerHTML = '';
+    const all = [...STATE.party, ...STATE.storage];
+    if (!all.length) { content.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;font-size:13px">仲魔がいない</div>'; return; }
+    all.forEach(d => {
+      const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
+      const el = document.createElement('div');
+      el.className = `demon-card-full ${d.inParty ? 'in-party' : ''}`;
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty ? 'warn' : 'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
+      content.appendChild(el);
+    });
+  },
+};
+
+// 後方互換: グローバル呼び出しをUIオブジェクトへ委譲
+function renderExplore()      { UI.renderExplore(); }
+function renderPartyBar()     { UI.renderPartyBar(); }
+function renderEnemyHP()      { UI.renderEnemyHP(); }
+function setBattleLog(msg)    { UI.setBattleLog(msg); }
+function addLog(msg, type='') { UI.addLog(msg, type); }
+function playEnemyHitAnim()   { UI.playEnemyHitAnim(); }
+function renderFusionScreen() { UI.renderFusionScreen(); }
+function renderPartyScreen()  { UI.renderPartyScreen(); }
 
 // ================================================================
 // [BLOCK: CONTROLLER] ゲームコントローラ
@@ -862,8 +881,8 @@ const G={
   showScreen(id){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    if(id==='screen-fusion')renderFusionScreen();
-    if(id==='screen-party') renderPartyScreen();
+    if(id==='screen-fusion') UI.renderFusionScreen();
+    if(id==='screen-party')  UI.renderPartyScreen();
   },
   backToExplore(){G.showScreen('screen-explore');},
 
