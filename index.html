@@ -1,11 +1,21 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.3.2
+  Version : 0.3.3
   Updated : 2026-03-20
   Author  : ののやま
 ================================================================
   CHANGELOG
+  v0.3.3 (2026-03-20)
+    - AUDIOモジュール追加（Web Audio API 手続き型生成）
+        BGM: 探索（ドローン）/ 戦闘（通常・ボス）
+        SE:  攻撃・被ダメ・弱点・逃走・交渉成功・レベルアップ
+             合体・全滅・階層上昇
+        ミュートトグル（localStorage 保存）
+    - ANIMモジュール追加（CSS エフェクト）
+        画面遷移フェードイン・属性カラーフラッシュ・弱点フラッシュ
+        ダメージ数値フロート・レベルアップバナー・合体演出・シェイク
+    - keyframes 追加（floatUp / bannerPop / fusionSpin / fadeIn / shake）
   v0.3.2 (2026-03-20)
     - UIモジュール（UIオブジェクト）をグローバル関数群から独立分離
       (renderExplore / renderPartyBar / renderEnemyHP / setBattleLog /
@@ -41,7 +51,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.3.2">
+<meta name="version" content="0.3.3">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <style>
@@ -177,6 +187,33 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);border:1px solid var(--border);padding:8px 16px;border-radius:20px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap;z-index:100}
 #toast.show{opacity:1}
+
+/* ---- ANIM keyframes ---- */
+@keyframes floatUp {
+  0%   { opacity:1; transform:translateX(-50%) translateY(0); }
+  100% { opacity:0; transform:translateX(-50%) translateY(-40px); }
+}
+@keyframes bannerPop {
+  0%   { opacity:0; transform:translateX(-50%) scale(.7); }
+  20%  { opacity:1; transform:translateX(-50%) scale(1.05); }
+  80%  { opacity:1; transform:translateX(-50%) scale(1); }
+  100% { opacity:0; transform:translateX(-50%) scale(.9); }
+}
+@keyframes fusionSpin {
+  0%   { transform:scale(0) rotate(-180deg); opacity:0; }
+  70%  { transform:scale(1.2) rotate(10deg); opacity:1; }
+  100% { transform:scale(1) rotate(0deg); opacity:1; }
+}
+@keyframes fadeIn {
+  from { opacity:0; } to { opacity:1; }
+}
+@keyframes shake {
+  0%,100% { transform:translateX(0); }
+  20%     { transform:translateX(-6px); }
+  40%     { transform:translateX(6px); }
+  60%     { transform:translateX(-4px); }
+  80%     { transform:translateX(4px); }
+}
 </style>
 </head>
 <body>
@@ -200,6 +237,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
       </div>
       <div class="header-stats"><span class="macca-display">₪ <span id="macca-display">0</span></span></div>
       <div class="header-btns">
+        <button class="btn" id="btn-mute" onclick="AUDIO.toggleMute();this.textContent=AUDIO.isMuted?'🔇':'🔊'" style="padding:8px 10px;font-size:11px;">🔊</button>
         <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-party')">仲魔</button>
         <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-fusion')">合体</button>
       </div>
@@ -317,7 +355,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.3.2';
+const APP_VERSION = '0.3.3';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -641,6 +679,286 @@ function playEnemyHitAnim()   { UI.playEnemyHitAnim(); }
 function renderFusionScreen() { UI.renderFusionScreen(); }
 function renderPartyScreen()  { UI.renderPartyScreen(); }
 
+
+// ================================================================
+// [BLOCK: AUDIO] BGM・SE 手続き型生成（Web Audio API）
+// 責務: 外部ファイル不要・AudioContext 1インスタンスで全音を生成
+// ミュート状態は localStorage に保存し起動時に復元する
+// 将来の分割先: audio.js
+// ================================================================
+const AUDIO = (() => {
+  let ctx = null;
+  let bgmNode = null;       // 現在再生中のBGMノード群
+  let bgmGain = null;       // BGMマスターゲイン
+  let muted = localStorage.getItem('daemonrift_mute') === '1';
+
+  // AudioContext を遅延初期化（ユーザー操作後に生成）
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+
+  // 単発オシレーター再生ヘルパー
+  function playTone(freq, type, gain, duration, startDelay = 0) {
+    if (muted) return;
+    const c = getCtx();
+    const osc = c.createOscillator();
+    const g   = c.createGain();
+    osc.connect(g); g.connect(c.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, c.currentTime + startDelay);
+    g.gain.setValueAtTime(gain, c.currentTime + startDelay);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + startDelay + duration);
+    osc.start(c.currentTime + startDelay);
+    osc.stop(c.currentTime + startDelay + duration);
+  }
+
+  // BGM停止ヘルパー
+  function stopBgm() {
+    if (bgmNode) {
+      bgmNode.forEach(n => { try { n.stop(); } catch(_) {} });
+      bgmNode = null;
+    }
+    if (bgmGain) { try { bgmGain.disconnect(); } catch(_) {} bgmGain = null; }
+  }
+
+  return {
+    get isMuted() { return muted; },
+
+    toggleMute() {
+      muted = !muted;
+      localStorage.setItem('daemonrift_mute', muted ? '1' : '0');
+      if (muted) stopBgm();
+      else AUDIO.playBgmExplore();
+      return muted;
+    },
+
+    // --- BGM ---
+    playBgmExplore() {
+      stopBgm();
+      if (muted) return;
+      const c = getCtx();
+      bgmGain = c.createGain();
+      bgmGain.gain.value = 0.06;
+      bgmGain.connect(c.destination);
+
+      // 廃都の雰囲気：低音ドローン＋微かなメロディ
+      const drones = [55, 82.4, 110];  // A1, E2, A2
+      bgmNode = drones.map(freq => {
+        const osc = c.createOscillator();
+        const lfo = c.createOscillator();
+        const lfoGain = c.createGain();
+        lfo.frequency.value = 0.15 + Math.random() * 0.1;
+        lfoGain.gain.value = 2;
+        lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        osc.connect(bgmGain);
+        lfo.start(); osc.start();
+        return osc;
+      });
+    },
+
+    playBgmBattle(isBoss = false) {
+      stopBgm();
+      if (muted) return;
+      const c = getCtx();
+      bgmGain = c.createGain();
+      bgmGain.gain.value = isBoss ? 0.09 : 0.07;
+      bgmGain.connect(c.destination);
+
+      // 戦闘：緊張感のある高速ドローン
+      const freqs = isBoss ? [110, 146.8, 164.8] : [130.8, 164.8, 196];
+      bgmNode = freqs.map((freq, i) => {
+        const osc = c.createOscillator();
+        osc.type = i === 0 ? 'square' : 'sawtooth';
+        osc.frequency.value = freq;
+        const g = c.createGain(); g.gain.value = i === 0 ? 0.5 : 0.3;
+        osc.connect(g); g.connect(bgmGain);
+        osc.start(); return osc;
+      });
+    },
+
+    stopBgm,
+
+    // --- SE ---
+    seAttack() {
+      // 攻撃：短いパンチ音
+      playTone(220, 'square', 0.3, 0.08);
+      playTone(180, 'sawtooth', 0.2, 0.12, 0.05);
+    },
+
+    seHit() {
+      // 被ダメージ：低音インパクト
+      playTone(80, 'sawtooth', 0.35, 0.15);
+      playTone(60, 'square', 0.2, 0.2, 0.05);
+    },
+
+    seWeakness() {
+      // 弱点ヒット：高音＋フラッシュ感
+      playTone(440, 'square', 0.25, 0.06);
+      playTone(660, 'square', 0.2,  0.06, 0.06);
+      playTone(880, 'square', 0.15, 0.08, 0.12);
+    },
+
+    seLevelUp() {
+      // レベルアップ：上昇アルペジオ
+      [262, 330, 392, 523].forEach((f, i) => playTone(f, 'square', 0.2, 0.12, i * 0.08));
+    },
+
+    seNegotiateSuccess() {
+      // 交渉成功：明るい2音
+      playTone(523, 'triangle', 0.25, 0.15);
+      playTone(659, 'triangle', 0.2,  0.2, 0.15);
+    },
+
+    seFusion() {
+      // 合体：神秘的な上昇音
+      [196, 247, 294, 370, 494].forEach((f, i) => playTone(f, 'sine', 0.18, 0.2, i * 0.1));
+    },
+
+    seDefeat() {
+      // 全滅：下降音
+      [220, 196, 165, 131, 110].forEach((f, i) => playTone(f, 'sawtooth', 0.25, 0.2, i * 0.12));
+    },
+
+    seFloorUp() {
+      // 階層上昇：短いファンファーレ
+      [392, 494, 587].forEach((f, i) => playTone(f, 'square', 0.18, 0.15, i * 0.1));
+    },
+
+    seFlee() {
+      // 逃走：下降グリッサンド
+      playTone(330, 'sawtooth', 0.2, 0.08);
+      playTone(262, 'sawtooth', 0.15, 0.1, 0.08);
+    },
+  };
+})();
+
+// ================================================================
+// [BLOCK: ANIM] アニメーション・エフェクト
+// 責務: CSS class の付け外し・DOM エフェクト生成
+// ゲームロジックを持たず、UIの視覚的な演出のみを担う
+// Phase 3 で追加する全エフェクトをここに集約する
+// 将来の分割先: anim.js
+// ================================================================
+const ANIM = {
+
+  // 画面遷移：フェードイン
+  screenIn(screenId) {
+    const el = document.getElementById(screenId);
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.2s ease';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { el.style.opacity = '1'; });
+    });
+  },
+
+  // 戦闘：攻撃フラッシュ（属性カラー対応）
+  attackFlash(attr) {
+    const colors = {
+      '炎':'#e67e22','氷':'#00d4ff','電':'#f1c40f',
+      '物':'#bdc3c7','呪':'#8e44ad',
+    };
+    const color = colors[attr] ?? '#fff';
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+      position:fixed;inset:0;background:${color};
+      opacity:0.18;pointer-events:none;z-index:999;
+      animation:none;transition:opacity 0.15s ease;
+    `;
+    document.body.appendChild(flash);
+    requestAnimationFrame(() => {
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 200);
+    });
+  },
+
+  // 戦闘：弱点ヒット時の大フラッシュ
+  weaknessFlash() {
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+      position:fixed;inset:0;background:#fff;
+      opacity:0.35;pointer-events:none;z-index:999;
+      transition:opacity 0.1s ease;
+    `;
+    document.body.appendChild(flash);
+    requestAnimationFrame(() => {
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 150);
+    });
+  },
+
+  // 戦闘：ダメージ数値をフロートさせる
+  floatDamage(dmg, isWeakness = false) {
+    const battle = document.getElementById('enemy-sprite');
+    if (!battle) return;
+    const el = document.createElement('div');
+    el.textContent = `-${dmg}`;
+    el.style.cssText = `
+      position:absolute;font-size:${isWeakness ? '24px' : '18px'};
+      font-weight:bold;color:${isWeakness ? '#f1c40f' : '#fff'};
+      text-shadow:0 0 6px rgba(0,0,0,.8);
+      pointer-events:none;z-index:100;
+      left:50%;top:20%;transform:translateX(-50%);
+      animation:floatUp 0.8s ease forwards;
+    `;
+    const wrap = battle.closest('.enemy-area') ?? document.getElementById('screen-battle');
+    wrap.style.position = 'relative';
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 900);
+  },
+
+  // レベルアップ：バナー表示
+  levelUpBanner(name) {
+    const el = document.createElement('div');
+    el.textContent = `✨ ${name} LEVEL UP!`;
+    el.style.cssText = `
+      position:fixed;top:30%;left:50%;transform:translateX(-50%);
+      background:rgba(241,196,15,.95);color:#000;
+      font-size:16px;font-weight:bold;padding:10px 24px;
+      border-radius:4px;z-index:1000;pointer-events:none;
+      animation:bannerPop 1.4s ease forwards;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+  },
+
+  // 合体演出：オーバーレイ
+  fusionEffect(resultName, resultEmoji) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:fixed;inset:0;background:rgba(0,0,0,.85);
+      display:flex;flex-direction:column;align-items:center;
+      justify-content:center;z-index:1000;
+      animation:fadeIn 0.3s ease forwards;
+    `;
+    overlay.innerHTML = `
+      <div style="font-size:64px;animation:fusionSpin 0.6s ease">${resultEmoji}</div>
+      <div style="font-size:20px;color:var(--gold);margin-top:16px;font-weight:bold">
+        ${resultName}
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-top:8px">誕生！</div>
+    `;
+    document.body.appendChild(overlay);
+    setTimeout(() => {
+      overlay.style.transition = 'opacity 0.3s';
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 350);
+    }, 1200);
+  },
+
+  // ゲームオーバー：画面シェイク
+  screenShake() {
+    const app = document.getElementById('app');
+    app.style.animation = 'none';
+    void app.offsetWidth;
+    app.style.animation = 'shake 0.5s ease';
+    setTimeout(() => { app.style.animation = ''; }, 600);
+  },
+};
+
 // ================================================================
 // [BLOCK: CONTROLLER] ゲームコントローラ
 // ユーザー入力の受け口・画面遷移・ENGINE と UI の橋渡し
@@ -674,6 +992,7 @@ const BATTLE = {
     setBattleLog(`${enemy.name} が立ちはだかる！`);
     document.getElementById('negotiate-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
+    AUDIO.playBgmBattle(enemy.isBoss);
     G.showScreen('screen-battle');
   },
 
@@ -686,6 +1005,9 @@ const BATTLE = {
     let msg = `${lead.name}の攻撃！ ${dmg}ダメージ`;
     if (aff >= 2) msg += '（弱点！）'; else if (aff <= 0.5) msg += '（耐性あり）';
     setBattleLog(msg);
+    AUDIO.seAttack();
+    if (aff >= 2) { AUDIO.seWeakness(); ANIM.weaknessFlash(); } else { ANIM.attackFlash(lead.attr); }
+    ANIM.floatDamage(dmg, aff >= 2);
     playEnemyHitAnim();
     renderEnemyHP();
     if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
@@ -698,6 +1020,9 @@ const BATTLE = {
     const dmg = Math.floor(calcDamage(lead, e) * 1.5);
     e.hp -= dmg;
     setBattleLog(`${lead.name}の「${lead.skills[0]}」！ ${dmg}ダメージ`);
+    AUDIO.seAttack();
+    ANIM.attackFlash(lead.attr);
+    ANIM.floatDamage(dmg);
     playEnemyHitAnim();
     renderEnemyHP();
     if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
@@ -707,8 +1032,9 @@ const BATTLE = {
   flee() {
     if (chance(0.6)) {
       STATE.inBattle = false;
+      AUDIO.seFlee();
       setBattleLog('うまく逃げ切った！');
-      setTimeout(() => { addLog('戦闘から逃げた', 'warn'); G.showScreen('screen-explore'); renderExplore(); }, 800);
+      setTimeout(() => { addLog('戦闘から逃げた', 'warn'); G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 800);
     } else {
       setBattleLog('逃げられなかった！');
       setTimeout(() => BATTLE._enemyAttack(), 600);
@@ -745,11 +1071,12 @@ const BATTLE = {
         STATE.storage.push(nd);
         setBattleLog(`${e.name}は仲間になった！（倉庫へ）`);
       }
+      AUDIO.seNegotiateSuccess();
       addLog(`${e.name}が仲魔になった！`, 'success');
       STATE.inBattle = false;
       STATE.floorProgress = Math.max(0, STATE.floorProgress - 1);
       saveGame();
-      setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); }, 1200);
+      setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 1200);
     } else {
       setBattleLog(`${e.name}は激怒した！`);
       setTimeout(() => BATTLE._enemyAttack(), 600);
@@ -761,6 +1088,7 @@ const BATTLE = {
     if (!t) { BATTLE._checkGameOver(); return; }
     const dmg = calcDamage(e, t);
     t.hp = Math.max(0, t.hp - dmg);
+    AUDIO.seHit();
     setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);
     renderPartyBar();
     if (t.hp <= 0) {
@@ -777,7 +1105,7 @@ const BATTLE = {
     STATE.kills++;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
       d.exp += eg;
-      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); }
+      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
     });
     setBattleLog(`${e.name}を倒した！ +${mg}₪`);
     playEnemyHitAnim();
@@ -789,13 +1117,16 @@ const BATTLE = {
     }
     saveGame();
     STATE.inBattle = false;
-    setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); }, 1200);
+    setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 1200);
   },
 
   _checkGameOver() {
     if (!STATE.party.every(d => d.hp <= 0)) return;
     clearInterval(STATE.exploreTimer);
     STATE.inBattle = STATE.exploring = false;
+    AUDIO.seDefeat();
+    AUDIO.stopBgm();
+    ANIM.screenShake();
     document.getElementById('go-floor').textContent   = `B${STATE.floor}F`;
     document.getElementById('go-best').textContent    = `B${STATE.bestFloor}F`;
     document.getElementById('go-kills').textContent   = STATE.kills;
@@ -849,8 +1180,9 @@ const FUSION = {
     STATE.fusions++;
     STATE.fusionA = STATE.fusionB = null;
     addLog(`合体成功！ ${a.name} × ${b.name} → ${result.name} Lv${result.lv}`, 'success');
+    AUDIO.seFusion();
+    ANIM.fusionEffect(result.name, result.emoji);
     saveGame();
-    showToast(`${result.name} が誕生した！`);
     renderFusionScreen();
     renderPartyBar();
   },
@@ -910,8 +1242,8 @@ const G={
   toggleExplore(){
     if(!STATE.party.length||STATE.party.every(d=>d.hp<=0)){showToast('仲魔がいない！');return;}
     STATE.exploring=!STATE.exploring;
-    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');}
-    else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');}
+    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore();}
+    else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
     renderExplore();
   },
 
