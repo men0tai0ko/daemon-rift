@@ -1,0 +1,826 @@
+<!--
+================================================================
+  DAEMON RIFT 廃都の悪魔
+  Version : 0.2.1
+  Updated : 2026-03-20
+  Author  : ののやま
+================================================================
+  CHANGELOG
+  v0.2.1 (2026-03-20)
+    - SAVEブロックに SAVE_SCHEMA_VERSION を導入
+    - loadGame() でスキーマ不一致時に旧データを安全破棄するバリデーション追加
+    - saveGame() の保存データに _sv フィールドを付与
+  v0.2.0 (2026-03-20)
+    - バージョン管理をコメントヘッダー/metaタグ/タイトル画面に統合
+    - STATEをSAVE_KEYS(保存対象)とランタイムに明示分離
+    - JSを責務別ブロック(DATA/UTIL/ENGINE/SAVE/UI/CONTROLLER)に再編
+    - セーブ/ロードに簡易バリデーション追加
+    - 定数(AFFINITY/FUSION_TABLE/AREAS)をDATAブロックへ集約
+    - 内部処理メソッドを _prefix で区別
+  v0.1.0 (2026-03-20)
+    - プロトタイプ初版
+================================================================
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="application-name" content="DAEMON RIFT">
+<meta name="version" content="0.2.1">
+<meta name="author" content="ののやま">
+<title>DAEMON RIFT</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a28;
+  --red:#c0392b;--purple:#8e44ad;--green:#27ae60;--orange:#e67e22;
+  --text:#e8e8e8;--muted:#888;--border:#2a2a40;--gold:#f1c40f;--cyan:#00d4ff;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:'Courier New','Noto Sans JP',monospace;overflow:hidden;touch-action:manipulation}
+#app{width:100%;height:100%;max-width:420px;margin:0 auto;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.screen{display:none;flex-direction:column;height:100%}
+.screen.active{display:flex}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 20px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:inherit;font-size:14px;cursor:pointer;border-radius:4px;transition:all .15s;-webkit-tap-highlight-color:transparent;user-select:none;min-height:44px}
+.btn:active{transform:scale(.96)}
+.btn.primary{border-color:var(--red);color:var(--red)}
+.btn.primary:active{background:var(--red);color:#fff}
+.btn.success{border-color:var(--green);color:var(--green)}
+.btn.warn{border-color:var(--orange);color:var(--orange)}
+.btn.disabled{opacity:.3;pointer-events:none}
+.tag{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:bold}
+/* title */
+#screen-title{background:radial-gradient(ellipse at 50% 30%,#1a0a2e 0%,var(--bg) 70%);align-items:center;justify-content:center;gap:0}
+.title-glitch{font-size:42px;font-weight:bold;letter-spacing:6px;color:var(--red);text-shadow:0 0 20px rgba(192,57,43,.8),0 0 40px rgba(192,57,43,.4);animation:glitch 4s infinite;margin-bottom:6px}
+.title-sub{font-size:12px;letter-spacing:4px;color:var(--purple);margin-bottom:60px}
+@keyframes glitch{0%,90%,100%{text-shadow:0 0 20px rgba(192,57,43,.8),0 0 40px rgba(192,57,43,.4)}92%{text-shadow:-3px 0 var(--cyan),3px 0 var(--purple);transform:skewX(-2deg)}94%{text-shadow:3px 0 var(--cyan),-3px 0 var(--red);transform:skewX(1deg)}96%{text-shadow:0 0 20px rgba(192,57,43,.8);transform:skewX(0)}}
+.title-buttons{display:flex;flex-direction:column;gap:12px;width:200px}
+.title-demon-art{font-size:80px;margin-bottom:20px;animation:float 3s ease-in-out infinite;filter:drop-shadow(0 0 20px rgba(142,68,173,.6))}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.title-version{position:absolute;bottom:16px;font-size:10px;color:var(--muted)}
+/* explore */
+#screen-explore{background:var(--bg)}
+.explore-header{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
+.floor-info{display:flex;flex-direction:column}
+.floor-num{font-size:20px;font-weight:bold;color:var(--cyan);letter-spacing:2px}
+.floor-label{font-size:10px;color:var(--muted);letter-spacing:1px}
+.macca-display{font-size:13px;color:var(--gold)}
+.header-btns{display:flex;gap:6px}
+.explore-log{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:4px;scroll-behavior:smooth}
+.log-entry{font-size:12px;line-height:1.6;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.log-entry.encounter{color:var(--red)}.log-entry.success{color:var(--green)}.log-entry.warn{color:var(--orange)}.log-entry.system{color:var(--purple)}.log-entry.boss{color:var(--gold);font-weight:bold}
+.party-bar{background:var(--bg2);border-top:1px solid var(--border);padding:10px 14px}
+.party-label{font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:6px}
+.party-list{display:flex;gap:8px}
+.party-card{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;min-width:0;transition:border-color .2s}
+.party-card.empty{opacity:.3;border-style:dashed}.party-card.dead{border-color:var(--red);opacity:.5}
+.party-card-top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.party-demon-emoji{font-size:22px}.party-demon-info{min-width:0}
+.party-demon-name{font-size:11px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.party-demon-lv{font-size:10px;color:var(--muted)}
+.hp-bar-wrap{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.hp-bar{height:100%;background:var(--green);border-radius:2px;transition:width .4s,background .4s}
+.hp-bar.low{background:var(--orange)}.hp-bar.critical{background:var(--red)}
+.explore-controls{background:var(--bg2);border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px}
+.explore-controls .btn{flex:1}
+.progress-wrap{padding:6px 14px;background:var(--bg2);border-top:1px solid var(--border)}
+.progress-label{font-size:10px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between}
+.progress-bar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,var(--purple),var(--cyan));border-radius:3px;transition:width 1s linear}
+/* battle */
+#screen-battle{background:radial-gradient(ellipse at 50% 20%,#1a0018 0%,var(--bg) 60%)}
+.battle-header{padding:12px 14px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);text-align:center}
+.battle-floor{font-size:11px;color:var(--muted);letter-spacing:2px}
+.battle-title{font-size:14px;color:var(--red);letter-spacing:1px}
+.battle-enemy-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px}
+.enemy-display{width:120px;height:120px;display:flex;align-items:center;justify-content:center}
+.enemy-sprite{font-size:70px;filter:drop-shadow(0 0 20px rgba(192,57,43,.6));animation:enemyFloat 2s ease-in-out infinite}
+.enemy-sprite.boss{font-size:85px;filter:drop-shadow(0 0 30px rgba(241,196,15,.8))}
+@keyframes enemyFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.02)}}
+.enemy-hit{animation:hit .3s ease !important}
+@keyframes hit{0%{transform:translateX(0);filter:brightness(3)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}100%{transform:translateX(0);filter:brightness(1)}}
+.enemy-info{text-align:center}.enemy-name{font-size:18px;font-weight:bold;color:var(--text);margin-bottom:2px}
+.enemy-tags{display:flex;gap:6px;justify-content:center;margin-bottom:8px}
+.enemy-hp-wrap{width:200px;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:0 auto}
+.enemy-hp-bar{height:100%;background:linear-gradient(90deg,var(--red),var(--orange));border-radius:4px;transition:width .4s}
+.enemy-hp-text{font-size:11px;color:var(--muted);margin-top:4px}
+.battle-log-area{padding:8px 14px;min-height:50px;max-height:70px;overflow:hidden}
+.battle-log-text{font-size:13px;line-height:1.6;color:var(--text);animation:fadeIn .2s ease}
+.battle-actions{background:var(--bg2);border-top:1px solid var(--border);padding:12px 14px}
+.action-row{display:flex;gap:8px;margin-bottom:8px}
+.action-row:last-child{margin-bottom:0}
+.action-row .btn{flex:1;font-size:13px}
+.negotiate-panel{display:none;background:var(--bg2);border-top:1px solid var(--border);padding:10px 14px}
+.negotiate-panel.active{display:block}
+.negotiate-title{font-size:11px;color:var(--purple);letter-spacing:1px;margin-bottom:8px}
+.negotiate-opts{display:flex;flex-direction:column;gap:6px}
+.negotiate-opts .btn{font-size:12px}
+/* fusion */
+#screen-fusion{background:radial-gradient(ellipse at 50% 0%,#0d001a 0%,var(--bg) 60%)}
+.fusion-header{padding:12px 14px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.fusion-header-title{font-size:15px;font-weight:bold;color:var(--purple);letter-spacing:2px}
+.fusion-content{flex:1;overflow-y:auto;padding:14px}
+.fusion-slots{display:flex;gap:10px;align-items:center;margin-bottom:16px}
+.fusion-slot{flex:1;background:var(--bg3);border:1px dashed var(--border);border-radius:8px;padding:12px;text-align:center;cursor:pointer;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:border-color .2s}
+.fusion-slot.filled{border-style:solid;border-color:var(--purple)}.fusion-slot:active{background:#1e1e2e}
+.fusion-slot-emoji{font-size:32px}.fusion-slot-name{font-size:12px;font-weight:bold}.fusion-slot-info{font-size:10px;color:var(--muted)}
+.fusion-arrow{font-size:20px;color:var(--purple);flex-shrink:0}
+.fusion-result-preview{background:var(--bg3);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;margin-bottom:14px;display:none}
+.fusion-result-preview.active{display:block}
+.fusion-result-label{font-size:10px;color:var(--purple);letter-spacing:2px;margin-bottom:8px}
+.fusion-result-emoji{font-size:48px;margin-bottom:4px}.fusion-result-name{font-size:18px;font-weight:bold;color:var(--gold)}.fusion-result-skill{font-size:11px;color:var(--cyan);margin-top:4px}
+.fusion-demon-list{display:flex;flex-direction:column;gap:6px}
+.fusion-demon-item{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:border-color .2s}
+.fusion-demon-item:active{border-color:var(--purple)}.fusion-demon-item.selected{border-color:var(--purple);background:#1e1230}
+.fusion-demon-item .emoji{font-size:28px}.fusion-demon-item .info{flex:1}
+.fusion-demon-item .dname{font-size:13px;font-weight:bold}.fusion-demon-item .ddetail{font-size:11px;color:var(--muted)}.fusion-demon-item .dskill{font-size:10px;color:var(--cyan)}
+/* party screen */
+#screen-party{background:var(--bg)}
+.party-screen-header{padding:12px 14px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.party-screen-title{font-size:15px;font-weight:bold;color:var(--cyan);letter-spacing:2px}
+.party-screen-content{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.demon-card-full{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;gap:12px;align-items:center}
+.demon-card-full.in-party{border-color:var(--cyan)}.demon-card-full .emoji{font-size:38px;flex-shrink:0}.demon-card-full .info{flex:1;min-width:0}
+.demon-card-full .dname{font-size:14px;font-weight:bold;margin-bottom:2px}
+.demon-card-full .dtags{display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap}
+.demon-card-full .dstats{font-size:11px;color:var(--muted);margin-bottom:4px}
+.demon-card-full .dskills{font-size:11px;color:var(--cyan)}.demon-card-full .dhp{margin-top:4px}
+.demon-card-full .action-btn{flex-shrink:0;font-size:11px;padding:6px 10px;min-height:36px}
+/* gameover */
+#screen-gameover{background:radial-gradient(ellipse at 50% 40%,#200000 0%,var(--bg) 70%);align-items:center;justify-content:center;gap:20px;text-align:center;padding:40px}
+.gameover-title{font-size:36px;font-weight:bold;color:var(--red);letter-spacing:4px}
+.gameover-sub{font-size:13px;color:var(--muted)}
+.gameover-stats{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:20px;width:100%}
+.gameover-stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+.gameover-stat-row:last-child{border-bottom:none}
+.gameover-stat-row span:last-child{color:var(--gold);font-weight:bold}
+/* attr tags */
+.attr-炎{background:rgba(230,126,34,.25);color:var(--orange)}.attr-氷{background:rgba(0,212,255,.15);color:var(--cyan)}
+.attr-電{background:rgba(241,196,15,.2);color:var(--gold)}.attr-物{background:rgba(232,232,232,.15);color:var(--text)}
+.attr-呪{background:rgba(142,68,173,.3);color:var(--purple)}
+.race-tag{background:rgba(255,255,255,.08);color:var(--muted)}.party-tag{background:rgba(0,212,255,.15);color:var(--cyan);font-size:9px}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);border:1px solid var(--border);padding:8px 16px;border-radius:20px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap;z-index:100}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="screen-title" class="screen active">
+    <div class="title-demon-art">👁️</div>
+    <div class="title-glitch">DAEMON RIFT</div>
+    <div class="title-sub">廃都の悪魔</div>
+    <div class="title-buttons">
+      <button class="btn primary" onclick="G.startNewGame()">▶ 新規ゲーム</button>
+      <button class="btn" id="btn-continue" onclick="G.continueGame()" style="display:none">↩ コンティニュー</button>
+    </div>
+    <div class="title-version" id="title-version"></div>
+  </div>
+
+  <div id="screen-explore" class="screen">
+    <div class="explore-header">
+      <div class="floor-info">
+        <span class="floor-num" id="floor-display">B1F</span>
+        <span class="floor-label" id="area-name">廃都表層</span>
+      </div>
+      <div class="header-stats"><span class="macca-display">₪ <span id="macca-display">0</span></span></div>
+      <div class="header-btns">
+        <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-party')">仲魔</button>
+        <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-fusion')">合体</button>
+      </div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span id="progress-label-text">フロア進行</span><span id="progress-label-num">0 / 5</span></div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+    </div>
+    <div class="explore-log" id="explore-log"><div class="log-entry system">— 探索を開始する —</div></div>
+    <div class="party-bar">
+      <div class="party-label">PARTY</div>
+      <div class="party-list" id="party-list"></div>
+    </div>
+    <div class="explore-controls">
+      <button class="btn primary" id="btn-explore-toggle" onclick="G.toggleExplore()">▶ 探索開始</button>
+      <button class="btn warn" onclick="G.showScreen('screen-fusion')">⚗ 合体</button>
+    </div>
+  </div>
+
+  <div id="screen-battle" class="screen">
+    <div class="battle-header">
+      <div class="battle-floor" id="battle-floor-text">B1F</div>
+      <div class="battle-title" id="battle-title-text">ENCOUNTER</div>
+    </div>
+    <div class="battle-enemy-area">
+      <div class="enemy-display"><div class="enemy-sprite" id="enemy-sprite">👿</div></div>
+      <div class="enemy-info">
+        <div class="enemy-name" id="enemy-name">???</div>
+        <div class="enemy-tags">
+          <span class="tag race-tag" id="enemy-race-tag">???</span>
+          <span class="tag" id="enemy-attr-tag">???</span>
+        </div>
+        <div class="enemy-hp-wrap"><div class="enemy-hp-bar" id="enemy-hp-bar" style="width:100%"></div></div>
+        <div class="enemy-hp-text" id="enemy-hp-text">HP: -- / --</div>
+      </div>
+    </div>
+    <div class="battle-log-area"><div class="battle-log-text" id="battle-log">...</div></div>
+    <div class="negotiate-panel" id="negotiate-panel">
+      <div class="negotiate-title">▌ 交渉方法を選べ</div>
+      <div class="negotiate-opts">
+        <button class="btn"         onclick="G.doNegotiate('おだてる')">😊 おだてる（成功率：中）</button>
+        <button class="btn warn"    onclick="G.doNegotiate('脅す')">😤 脅す（成功率：低）</button>
+        <button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（成功率：高）</button>
+        <button class="btn"         onclick="G.cancelNegotiate()">✕ キャンセル</button>
+      </div>
+    </div>
+    <div class="battle-actions" id="battle-actions">
+      <div class="action-row">
+        <button class="btn primary" onclick="G.doAttack()">⚔ 攻撃</button>
+        <button class="btn"         onclick="G.startNegotiate()">💬 話す</button>
+      </div>
+      <div class="action-row">
+        <button class="btn"          onclick="G.doFlee()">🏃 逃げる</button>
+        <button class="btn disabled" onclick="G.doSkill()">✨ スキル</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-fusion" class="screen">
+    <div class="fusion-header">
+      <button class="btn" style="padding:8px 12px;font-size:12px;" onclick="G.backToExplore()">← 戻る</button>
+      <span class="fusion-header-title">⚗ 合体ラボ</span>
+    </div>
+    <div class="fusion-content">
+      <div class="fusion-slots">
+        <div class="fusion-slot" id="fusion-slot-a" onclick="G.selectFusionSlot('a')">
+          <div class="fusion-slot-emoji" id="fusion-slot-a-emoji">＋</div>
+          <div class="fusion-slot-name"  id="fusion-slot-a-name">素材 A</div>
+          <div class="fusion-slot-info"  id="fusion-slot-a-info">タップで選択</div>
+        </div>
+        <div class="fusion-arrow">×</div>
+        <div class="fusion-slot" id="fusion-slot-b" onclick="G.selectFusionSlot('b')">
+          <div class="fusion-slot-emoji" id="fusion-slot-b-emoji">＋</div>
+          <div class="fusion-slot-name"  id="fusion-slot-b-name">素材 B</div>
+          <div class="fusion-slot-info"  id="fusion-slot-b-info">タップで選択</div>
+        </div>
+      </div>
+      <div class="fusion-result-preview" id="fusion-preview">
+        <div class="fusion-result-label">▌ 合体結果プレビュー</div>
+        <div class="fusion-result-emoji" id="fusion-result-emoji">?</div>
+        <div class="fusion-result-name"  id="fusion-result-name">???</div>
+        <div class="fusion-result-skill" id="fusion-result-skill"></div>
+        <button class="btn primary" style="margin-top:12px;width:100%;" onclick="G.executeFusion()">⚡ 合体実行</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:1px;">▌ 仲魔一覧（タップで素材選択）</div>
+      <div class="fusion-demon-list" id="fusion-demon-list"></div>
+    </div>
+  </div>
+
+  <div id="screen-party" class="screen">
+    <div class="party-screen-header">
+      <button class="btn" style="padding:8px 12px;font-size:12px;" onclick="G.backToExplore()">← 戻る</button>
+      <span class="party-screen-title">仲魔一覧</span>
+    </div>
+    <div class="party-screen-content" id="party-screen-content"></div>
+  </div>
+
+  <div id="screen-gameover" class="screen">
+    <div class="gameover-title">DEAD</div>
+    <div class="gameover-sub">仲魔は全滅した…</div>
+    <div class="gameover-stats">
+      <div class="gameover-stat-row"><span>到達深度</span>    <span id="go-floor">B1F</span></div>
+      <div class="gameover-stat-row"><span>最大深度記録</span><span id="go-best">B1F</span></div>
+      <div class="gameover-stat-row"><span>撃破数</span>      <span id="go-kills">0</span></div>
+      <div class="gameover-stat-row"><span>合体回数</span>    <span id="go-fusions">0</span></div>
+    </div>
+    <button class="btn primary" style="width:100%;" onclick="G.startNewGame()">▶ もう一度</button>
+    <button class="btn"         style="width:100%;" onclick="G.showScreen('screen-title')">タイトルへ</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ================================================================
+// [BLOCK: META] バージョン情報
+// HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
+// ================================================================
+const APP_VERSION = '0.2.1';
+const APP_NAME    = 'DAEMON RIFT';
+
+// ================================================================
+// [BLOCK: DATA] マスターデータ・定数
+// 将来の分割先: data.js
+// ================================================================
+
+// 悪魔マスターデータ — Phase 4 で 20 体以上に拡充予定
+const DEMON_MASTER = [
+  { id:1,  name:"ピクシー",        race:"妖精",   attr:"氷", emoji:"🧚", lv:1,  hp:30,  atk:8,  def:5,  spd:12, skills:["ブフ"],               rare:"C" },
+  { id:2,  name:"スライム",        race:"妖精",   attr:"物", emoji:"🫧", lv:1,  hp:25,  atk:6,  def:8,  spd:8,  skills:["たたく"],             rare:"C" },
+  { id:3,  name:"コボルド",        race:"妖精",   attr:"物", emoji:"🐺", lv:2,  hp:35,  atk:10, def:6,  spd:10, skills:["噛みつき"],           rare:"C" },
+  { id:4,  name:"ジャックランタン",race:"鬼神",   attr:"炎", emoji:"🎃", lv:3,  hp:45,  atk:12, def:7,  spd:9,  skills:["アギ"],               rare:"C" },
+  { id:5,  name:"ゾンビ",          race:"死霊",   attr:"呪", emoji:"🧟", lv:2,  hp:50,  atk:9,  def:10, spd:5,  skills:["腐敗"],               rare:"C" },
+  { id:6,  name:"シャドウ",        race:"堕天使", attr:"呪", emoji:"👤", lv:4,  hp:40,  atk:14, def:6,  spd:14, skills:["呪縛"],               rare:"B" },
+  { id:7,  name:"ケルベロス",      race:"幻魔",   attr:"炎", emoji:"🐕", lv:8,  hp:80,  atk:22, def:14, spd:11, skills:["アギラオ","噛みつき"],rare:"B" },
+  { id:8,  name:"メデューサ",      race:"幻魔",   attr:"氷", emoji:"🐍", lv:7,  hp:70,  atk:18, def:12, spd:13, skills:["石化眼","ブフーラ"],  rare:"B" },
+  { id:9,  name:"アスタロト",      race:"堕天使", attr:"呪", emoji:"👑", lv:12, hp:110, atk:30, def:18, spd:10, skills:["メギド","混乱"],      rare:"A" },
+  { id:10, name:"セラフ",          race:"天使",   attr:"電", emoji:"😇", lv:10, hp:90,  atk:25, def:20, spd:15, skills:["ジオ","回復"],        rare:"A" },
+];
+
+// 属性相性テーブル（攻撃属性 → 防御属性: 倍率）
+const AFFINITY = {
+  "炎":{"炎":.5,"氷":2,"電":1,"物":1,"呪":1},
+  "氷":{"炎":.5,"氷":.5,"電":2,"物":1,"呪":1},
+  "電":{"炎":1,"氷":1,"電":.5,"物":1.5,"呪":1},
+  "物":{"炎":1,"氷":1,"電":1,"物":1,"呪":1.5},
+  "呪":{"炎":1,"氷":1,"電":1,"物":.5,"呪":.5},
+};
+
+// 合体テーブル（種族A+種族B → 生成悪魔ID）— Phase 4 で拡充予定
+const FUSION_TABLE = {
+  "妖精+鬼神":7,"妖精+死霊":6,"妖精+堕天使":8,
+  "鬼神+死霊":9,"鬼神+幻魔":10,
+  "死霊+幻魔":9,"死霊+天使":10,"堕天使+天使":10,
+};
+
+// エリア定義（深度帯）
+const AREAS = [
+  {minFloor:1, name:"廃都表層"},{minFloor:11,name:"地下街区"},
+  {minFloor:31,name:"冥界回廊"},{minFloor:61,name:"虚無の底"},
+];
+
+// ================================================================
+// [BLOCK: STATE] ゲーム状態
+//
+// SAVE_KEYS: localStorageに保存するフィールド名の一覧
+//   新規フィールド追加時はここへの追記要否を必ず確認すること
+//
+// ランタイム専用（保存不要）:
+//   exploring / exploreTimer / inBattle / currentEnemy /
+//   fusionSlot / fusionA / fusionB
+//
+// 将来の分割先: state.js
+// ================================================================
+const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage'];
+
+const STATE = {
+  // セーブ対象
+  floor:1, macca:100, kills:0, fusions:0, bestFloor:1,
+  party:[], storage:[],
+  // ランタイム専用（セーブ対象外）
+  floorProgress:0,
+  exploring:false, exploreTimer:null,
+  inBattle:false, currentEnemy:null,
+  fusionSlot:null, fusionA:null, fusionB:null,
+};
+
+// ================================================================
+// [BLOCK: UTIL] 汎用ユーティリティ
+// 将来の分割先: util.js
+// ================================================================
+function rand(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+function chance(rate){return Math.random()<rate}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+function showToast(msg,duration=2000){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),duration);
+}
+
+// ================================================================
+// [BLOCK: ENGINE] ゲームロジック（純粋計算・データ操作）
+// UIに依存しない処理のみ記述する
+// 将来の分割先: engine.js
+// ================================================================
+
+// マスターデータからレベルスケール済みの悪魔インスタンスを生成する
+function createDemon(masterId,overrideLv=null){
+  const m=DEMON_MASTER.find(d=>d.id===masterId);
+  if(!m)return null;
+  const lv=overrideLv??m.lv, s=1+(lv-1)*0.12;
+  return{
+    uid:Date.now()+Math.random(),masterId:m.id,
+    name:m.name,race:m.race,attr:m.attr,emoji:m.emoji,rare:m.rare,lv,
+    skills:[...m.skills],
+    maxHp:Math.floor(m.hp*s),hp:Math.floor(m.hp*s),
+    atk:Math.floor(m.atk*s),def:Math.floor(m.def*s),spd:Math.floor(m.spd*s),
+    exp:0,expNext:lv*20,inParty:false,
+  };
+}
+
+// フロアに応じた敵悪魔を生成する（isBoss=true でボス倍率を適用）
+function spawnEnemy(floor,isBoss=false){
+  const pool=DEMON_MASTER.filter(d=>d.lv<=Math.ceil(floor/3)+2);
+  const base=pool[rand(0,pool.length-1)];
+  const lv=clamp(rand(floor,floor+2),1,50);
+  const s=(1+(floor-1)*0.08)*(isBoss?2.5:1);
+  return{
+    name:isBoss?`【BOSS】${base.name}`:base.name,
+    race:base.race,attr:base.attr,emoji:base.emoji,
+    isBoss,skills:[...base.skills],lv,masterId:base.id,
+    maxHp:Math.floor(base.hp*s),hp:Math.floor(base.hp*s),
+    atk:Math.floor(base.atk*s),def:Math.floor(base.def*s),
+  };
+}
+
+// ダメージ計算（属性相性・分散込み）
+function calcDamage(att,def){
+  const base=Math.max(1,att.atk-def.def*0.4);
+  const aff=AFFINITY[att.attr]?.[def.attr]??1;
+  return Math.floor(base*aff*(0.85+Math.random()*0.3));
+}
+
+// 交渉成功率を返す
+function calcNegotiateRate(playerLv,enemyLv,tactic){
+  const base={"おだてる":.45,"脅す":.25,"金で解決":.65};
+  return clamp((base[tactic]??.4)+(playerLv-enemyLv)*0.05,0.05,0.9);
+}
+
+// 合体結果のプレビューを返す（合体不可なら null）
+function getFusionResult(a,b){
+  const rid=FUSION_TABLE[`${a.race}+${b.race}`]??FUSION_TABLE[`${b.race}+${a.race}`];
+  if(!rid)return null;
+  const base=DEMON_MASTER.find(d=>d.id===rid);
+  if(!base)return null;
+  return{masterId:rid,name:base.name,emoji:base.emoji,
+    lv:Math.floor((a.lv+b.lv)/2)+1,skill:chance(.5)?a.skills[0]:b.skills[0]};
+}
+
+// レベルアップ処理（STATEの悪魔オブジェクトを直接更新する）
+function applyLevelUp(demon){
+  demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
+  demon.maxHp+=rand(3,6);demon.hp=demon.maxHp;
+  demon.atk+=rand(1,2);demon.def+=rand(1,2);
+}
+
+// ================================================================
+// [BLOCK: SAVE] セーブ・ロード処理
+// 将来の分割先: save.js
+// ================================================================
+const LS_KEY_SAVE='daemonrift_save';
+const LS_KEY_BEST='daemonrift_best';
+// セーブデータの構造が変わった際はここを上げる（旧データを破棄して再起動）
+const SAVE_SCHEMA_VERSION=1;
+
+// SAVE_KEYS に列挙されたフィールドのみを localStorage に保存する
+function saveGame(){
+  const data={_sv:SAVE_SCHEMA_VERSION};
+  SAVE_KEYS.forEach(k=>{data[k]=STATE[k]});
+  localStorage.setItem(LS_KEY_SAVE,JSON.stringify(data));
+}
+
+// バリデーション:
+//   1. JSONパース失敗 → null
+//   2. スキーマバージョン不一致 → null（旧データを安全に捨てる）
+//   3. SAVE_KEYS のいずれかが欠損 → null
+function loadGame(){
+  const raw=localStorage.getItem(LS_KEY_SAVE);
+  if(!raw)return null;
+  try{
+    const data=JSON.parse(raw);
+    if(data._sv!==SAVE_SCHEMA_VERSION){
+      console.warn(`[SAVE] スキーマ不一致 (saved:${data._sv} / current:${SAVE_SCHEMA_VERSION}) — リセット`);
+      localStorage.removeItem(LS_KEY_SAVE);return null;
+    }
+    const missing=SAVE_KEYS.filter(k=>!(k in data));
+    if(missing.length){console.warn('[SAVE] 欠損キー:',missing);return null;}
+    return data;
+  }catch(e){console.error('[SAVE] パース失敗:',e);return null;}
+}
+
+// 最大到達深度を STATE と localStorage の両方に記録する
+function updateBestFloor(){
+  if(STATE.floor>STATE.bestFloor)STATE.bestFloor=STATE.floor;
+  const prev=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
+  if(STATE.bestFloor>prev)localStorage.setItem(LS_KEY_BEST,STATE.bestFloor);
+}
+
+// ================================================================
+// [BLOCK: UI] UI描画・DOM操作
+// ゲームロジックを持たず、STATE / ENGINE の結果を表示するのみにすること
+// 将来の分割先: ui.js
+// ================================================================
+
+// 探索画面を最新 STATE で全更新する
+function renderExplore(){
+  document.getElementById('floor-display').textContent=`B${STATE.floor}F`;
+  document.getElementById('macca-display').textContent=STATE.macca;
+  document.getElementById('progress-bar').style.width=`${(STATE.floorProgress/5)*100}%`;
+  document.getElementById('progress-label-num').textContent=`${STATE.floorProgress} / 5`;
+  document.getElementById('progress-label-text').textContent=STATE.floor%10===0?'⚠ ボスフロア':'フロア進行';
+  document.getElementById('btn-explore-toggle').textContent=STATE.exploring?'⏸ 探索停止':'▶ 探索開始';
+  const area=[...AREAS].reverse().find(a=>STATE.floor>=a.minFloor);
+  document.getElementById('area-name').textContent=area?.name??'廃都表層';
+  renderPartyBar();
+}
+
+// パーティバーを描画する
+function renderPartyBar(){
+  const list=document.getElementById('party-list');
+  list.innerHTML='';
+  for(let i=0;i<3;i++){
+    const d=STATE.party[i],card=document.createElement('div');
+    if(!d){
+      card.className='party-card empty';
+      card.innerHTML='<div style="font-size:22px;opacity:.3">＋</div>';
+    }else{
+      const p=(d.hp/d.maxHp)*100,bc=p>50?'':p>25?'low':'critical';
+      card.className=`party-card ${d.hp<=0?'dead':''}`;
+      card.innerHTML=`<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div>`;
+    }
+    list.appendChild(card);
+  }
+}
+
+// 戦闘画面の敵HPバーを更新する
+function renderEnemyHP(){
+  const e=STATE.currentEnemy,p=Math.max(0,(e.hp/e.maxHp)*100);
+  document.getElementById('enemy-hp-bar').style.width=`${p}%`;
+  document.getElementById('enemy-hp-text').textContent=`HP: ${Math.max(0,e.hp)} / ${e.maxHp}`;
+}
+
+// 戦闘ログを更新する（フェードアニメーション付き）
+function setBattleLog(msg){
+  const el=document.getElementById('battle-log');
+  el.textContent=msg;el.style.animation='none';void el.offsetWidth;el.style.animation='';
+}
+
+// 探索ログに1行追加する（最大50行）
+function addLog(msg,type=''){
+  const log=document.getElementById('explore-log');
+  const el=document.createElement('div');
+  el.className=`log-entry ${type}`;el.textContent=msg;
+  log.appendChild(el);log.scrollTop=log.scrollHeight;
+  while(log.children.length>50)log.removeChild(log.firstChild);
+}
+
+// 敵スプライトのヒットアニメーションを再生する
+function playEnemyHitAnim(){
+  const s=document.getElementById('enemy-sprite');
+  s.classList.remove('enemy-hit');void s.offsetWidth;
+  s.classList.add('enemy-hit');setTimeout(()=>s.classList.remove('enemy-hit'),300);
+}
+
+// 合体ラボ画面を描画する
+function renderFusionScreen(){
+  const{fusionA:sA,fusionB:sB}=STATE;
+  function fillSlot(side,d){
+    const el=document.getElementById(`fusion-slot-${side}`);
+    if(d){
+      el.classList.add('filled');
+      document.getElementById(`fusion-slot-${side}-emoji`).textContent=d.emoji;
+      document.getElementById(`fusion-slot-${side}-name`).textContent=d.name;
+      document.getElementById(`fusion-slot-${side}-info`).textContent=`Lv${d.lv} ${d.race}`;
+    }else{
+      el.classList.remove('filled');
+      document.getElementById(`fusion-slot-${side}-emoji`).textContent='＋';
+      document.getElementById(`fusion-slot-${side}-name`).textContent=`素材 ${side.toUpperCase()}`;
+      document.getElementById(`fusion-slot-${side}-info`).textContent='タップで選択';
+    }
+  }
+  fillSlot('a',sA);fillSlot('b',sB);
+  const preview=document.getElementById('fusion-preview');
+  if(sA&&sB){
+    const r=getFusionResult(sA,sB);
+    if(r){
+      preview.classList.add('active');
+      document.getElementById('fusion-result-emoji').textContent=r.emoji;
+      document.getElementById('fusion-result-name').textContent=`${r.name} Lv${r.lv}`;
+      document.getElementById('fusion-result-skill').textContent=`継承スキル: ${r.skill}`;
+    }else{preview.classList.remove('active');showToast('この組み合わせは合体できない');}
+  }else{preview.classList.remove('active');}
+  const list=document.getElementById('fusion-demon-list');
+  list.innerHTML='';
+  [...STATE.party,...STATE.storage].forEach(d=>{
+    const isA=STATE.fusionA?.uid===d.uid,isB=STATE.fusionB?.uid===d.uid;
+    const el=document.createElement('div');
+    el.className=`fusion-demon-item ${(isA||isB)?'selected':''}`;
+    el.innerHTML=`<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span>${d.inParty?' <span class="tag party-tag">PARTY</span>':''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA?'[A]':isB?'[B]':''}</div>`;
+    el.onclick=()=>G.selectFusionDemon(d.uid);
+    list.appendChild(el);
+  });
+}
+
+// 仲魔一覧画面を描画する
+function renderPartyScreen(){
+  const content=document.getElementById('party-screen-content');
+  content.innerHTML='';
+  const all=[...STATE.party,...STATE.storage];
+  if(!all.length){content.innerHTML='<div style="color:var(--muted);text-align:center;padding:40px;font-size:13px">仲魔がいない</div>';return;}
+  all.forEach(d=>{
+    const p=(d.hp/d.maxHp)*100,bc=p>50?'':p>25?'low':'critical';
+    const el=document.createElement('div');
+    el.className=`demon-card-full ${d.inParty?'in-party':''}`;
+    el.innerHTML=`<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty?'<span class="tag party-tag">PARTY</span>':''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0,d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty?'warn':'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty?'外す':'パーティ'}</button>`;
+    content.appendChild(el);
+  });
+}
+
+// ================================================================
+// [BLOCK: CONTROLLER] ゲームコントローラ
+// ユーザー入力の受け口・画面遷移・ENGINE と UI の橋渡し
+// 外部から直接呼び出し想定外のメソッドは _ プレフィックスで区別する
+// 将来の分割先: controller.js
+// ================================================================
+const G={
+  showScreen(id){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    if(id==='screen-fusion')renderFusionScreen();
+    if(id==='screen-party') renderPartyScreen();
+  },
+  backToExplore(){G.showScreen('screen-explore');},
+
+  startNewGame(){
+    clearInterval(STATE.exploreTimer);
+    Object.assign(STATE,{floor:1,macca:100,kills:0,fusions:0,bestFloor:1,
+      floorProgress:0,exploring:false,exploreTimer:null,
+      party:[],storage:[],fusionA:null,fusionB:null});
+    const s=createDemon(1,1);s.inParty=true;
+    STATE.party=[s];STATE.storage=[createDemon(4,2)];
+    updateBestFloor();G.showScreen('screen-explore');renderExplore();
+    addLog('新たな探索者が廃都へ踏み込んだ…','system');
+    addLog(`初期仲魔：${s.name} を連れている`,'success');
+  },
+
+  continueGame(){
+    const data=loadGame();
+    if(!data){showToast('セーブデータが見つからない');return;}
+    SAVE_KEYS.forEach(k=>{STATE[k]=data[k];});
+    STATE.exploring=false;
+    G.showScreen('screen-explore');renderExplore();
+    addLog('探索を再開した…','system');
+  },
+
+  toggleExplore(){
+    if(!STATE.party.length||STATE.party.every(d=>d.hp<=0)){showToast('仲魔がいない！');return;}
+    STATE.exploring=!STATE.exploring;
+    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');}
+    else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');}
+    renderExplore();
+  },
+
+  _exploreStep(){
+    STATE.floorProgress++;
+    const boss=STATE.floor%10===0;
+    if(STATE.floorProgress>=5||boss){
+      STATE.exploring=false;clearInterval(STATE.exploreTimer);
+      const e=spawnEnemy(STATE.floor,boss);STATE.currentEnemy=e;
+      addLog(boss?`⚠ ボス出現！ ${e.name}が立ちはだかった！`:`! ${e.name}が現れた！`,boss?'boss':'encounter');
+      renderExplore();setTimeout(()=>G._openBattle(e),800);
+    }else{
+      const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
+      const auto=spawnEnemy(STATE.floor);
+      addLog(`${auto.name} を自動討伐（+${gain}₪）`);renderExplore();
+    }
+  },
+
+  _openBattle(enemy){
+    STATE.inBattle=true;STATE.currentEnemy=enemy;
+    document.getElementById('battle-floor-text').textContent=`B${STATE.floor}F`;
+    document.getElementById('battle-title-text').textContent=enemy.isBoss?'⚠ BOSS BATTLE':'ENCOUNTER';
+    const sp=document.getElementById('enemy-sprite');
+    sp.textContent=enemy.emoji;sp.className=`enemy-sprite${enemy.isBoss?' boss':''}`;
+    document.getElementById('enemy-name').textContent=enemy.name;
+    document.getElementById('enemy-race-tag').textContent=enemy.race;
+    const at=document.getElementById('enemy-attr-tag');at.textContent=enemy.attr;at.className=`tag attr-${enemy.attr}`;
+    renderEnemyHP();setBattleLog(`${enemy.name} が立ちはだかる！`);
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display='';
+    G.showScreen('screen-battle');
+  },
+
+  doAttack(){
+    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
+    if(!lead||!e)return;
+    const dmg=calcDamage(lead,e);e.hp-=dmg;
+    const aff=AFFINITY[lead.attr]?.[e.attr]??1;
+    let msg=`${lead.name}の攻撃！ ${dmg}ダメージ`;
+    if(aff>=2)msg+='（弱点！）';else if(aff<=.5)msg+='（耐性あり）';
+    setBattleLog(msg);playEnemyHitAnim();renderEnemyHP();
+    if(e.hp<=0){G._enemyDefeated();return;}
+    setTimeout(()=>G._enemyAttack(),600);
+  },
+
+  doSkill(){
+    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
+    if(!lead||!e||!lead.skills.length)return;
+    const dmg=Math.floor(calcDamage(lead,e)*1.5);e.hp-=dmg;
+    setBattleLog(`${lead.name}の「${lead.skills[0]}」！ ${dmg}ダメージ`);
+    playEnemyHitAnim();renderEnemyHP();
+    if(e.hp<=0){G._enemyDefeated();return;}
+    setTimeout(()=>G._enemyAttack(),600);
+  },
+
+  doFlee(){
+    if(chance(.6)){
+      STATE.inBattle=false;setBattleLog('うまく逃げ切った！');
+      setTimeout(()=>{addLog('戦闘から逃げた','warn');G.showScreen('screen-explore');renderExplore();},800);
+    }else{setBattleLog('逃げられなかった！');setTimeout(()=>G._enemyAttack(),600);}
+  },
+
+  startNegotiate(){
+    if(STATE.currentEnemy?.isBoss){showToast('ボスと交渉できない！');return;}
+    document.getElementById('negotiate-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display='none';
+  },
+  cancelNegotiate(){
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display='';
+  },
+  doNegotiate(tactic){
+    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
+    if(!lead||!e)return;
+    if(tactic==='金で解決'){
+      const cost=rand(10,20+e.lv*3);
+      if(STATE.macca<cost){showToast(`₪が足りない（必要: ${cost}）`);return;}
+      STATE.macca-=cost;
+    }
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display='';
+    if(chance(calcNegotiateRate(lead.lv,e.lv,tactic))){
+      const nd=createDemon(e.masterId,e.lv);
+      if(STATE.party.length<3){nd.inParty=true;STATE.party.push(nd);setBattleLog(`${e.name}は仲間になった！（パーティ加入）`);}
+      else{STATE.storage.push(nd);setBattleLog(`${e.name}は仲間になった！（倉庫へ）`);}
+      addLog(`${e.name}が仲魔になった！`,'success');
+      STATE.inBattle=false;STATE.floorProgress=Math.max(0,STATE.floorProgress-1);
+      saveGame();setTimeout(()=>{G.showScreen('screen-explore');renderExplore();},1200);
+    }else{setBattleLog(`${e.name}は激怒した！`);setTimeout(()=>G._enemyAttack(),600);}
+  },
+
+  _enemyAttack(){
+    const e=STATE.currentEnemy,t=STATE.party.find(d=>d.hp>0);
+    if(!t){G._checkGameOver();return;}
+    const dmg=calcDamage(e,t);t.hp=Math.max(0,t.hp-dmg);
+    setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);renderPartyBar();
+    if(t.hp<=0){setBattleLog(`${t.name} は倒れた…`);if(STATE.party.every(d=>d.hp<=0))setTimeout(()=>G._checkGameOver(),1000);}
+  },
+
+  _enemyDefeated(){
+    const e=STATE.currentEnemy;
+    const mg=rand(10,20+STATE.floor*2),eg=rand(5,10+STATE.floor);
+    STATE.macca+=mg;STATE.kills++;
+    STATE.party.filter(d=>d.hp>0).forEach(d=>{
+      d.exp+=eg;if(d.exp>=d.expNext){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');}
+    });
+    setBattleLog(`${e.name}を倒した！ +${mg}₪`);playEnemyHitAnim();
+    if(STATE.floorProgress>=5||e.isBoss){STATE.floor++;STATE.floorProgress=0;updateBestFloor();addLog(`B${STATE.floor}Fへ進んだ`,'system');}
+    saveGame();STATE.inBattle=false;
+    setTimeout(()=>{G.showScreen('screen-explore');renderExplore();},1200);
+  },
+
+  _checkGameOver(){
+    if(!STATE.party.every(d=>d.hp<=0))return;
+    clearInterval(STATE.exploreTimer);STATE.inBattle=STATE.exploring=false;
+    document.getElementById('go-floor').textContent=`B${STATE.floor}F`;
+    document.getElementById('go-best').textContent=`B${STATE.bestFloor}F`;
+    document.getElementById('go-kills').textContent=STATE.kills;
+    document.getElementById('go-fusions').textContent=STATE.fusions;
+    G.showScreen('screen-gameover');
+  },
+
+  selectFusionSlot(slot){STATE.fusionSlot=slot;renderFusionScreen();},
+
+  selectFusionDemon(uid){
+    const d=[...STATE.party,...STATE.storage].find(x=>x.uid===uid);
+    if(!d)return;
+    if(STATE.fusionSlot==='a'){if(STATE.fusionB?.uid===uid){showToast('同じ悪魔は選べない');return;}STATE.fusionA=d;}
+    else{if(STATE.fusionA?.uid===uid){showToast('同じ悪魔は選べない');return;}STATE.fusionB=d;}
+    STATE.fusionSlot=null;renderFusionScreen();
+  },
+
+  executeFusion(){
+    const{fusionA:a,fusionB:b}=STATE;if(!a||!b)return;
+    const p=getFusionResult(a,b);if(!p){showToast('この組み合わせは合体できない');return;}
+    STATE.party=STATE.party.filter(d=>d.uid!==a.uid&&d.uid!==b.uid);
+    STATE.storage=STATE.storage.filter(d=>d.uid!==a.uid&&d.uid!==b.uid);
+    const r=createDemon(p.masterId,p.lv);r.skills=[p.skill];
+    if(STATE.party.length<3){r.inParty=true;STATE.party.push(r);}else STATE.storage.push(r);
+    STATE.fusions++;STATE.fusionA=STATE.fusionB=null;
+    addLog(`合体成功！ ${a.name} × ${b.name} → ${r.name} Lv${r.lv}`,'success');
+    saveGame();showToast(`${r.name} が誕生した！`);renderFusionScreen();renderPartyBar();
+  },
+
+  toggleParty(uid){
+    const all=[...STATE.party,...STATE.storage],d=all.find(x=>x.uid==uid);
+    if(!d)return;
+    if(d.inParty){
+      d.inParty=false;STATE.party=STATE.party.filter(x=>x.uid!=uid);STATE.storage.push(d);
+      showToast(`${d.name} をパーティから外した`);
+    }else{
+      if(STATE.party.length>=3){showToast('パーティは最大3体');return;}
+      d.inParty=true;STATE.storage=STATE.storage.filter(x=>x.uid!=uid);STATE.party.push(d);
+      showToast(`${d.name} をパーティに加えた`);
+    }
+    saveGame();renderPartyScreen();renderPartyBar();
+  },
+};
+
+// ================================================================
+// [BLOCK: INIT] 起動処理
+// ================================================================
+(function init(){
+  document.getElementById('title-version').textContent=`v${APP_VERSION}`;
+  if(loadGame())document.getElementById('btn-continue').style.display='';
+})();
+</script>
+</body>
+</html>
