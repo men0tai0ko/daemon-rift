@@ -1,11 +1,15 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.3.0
+  Version : 0.3.1
   Updated : 2026-03-20
   Author  : ののやま
 ================================================================
   CHANGELOG
+  v0.3.1 (2026-03-20)
+    - FUSIONモジュールをGから独立分離
+      (selectSlot / selectDemon / execute / toggleParty)
+    - GはFUSION.xxxへの委譲のみ保持（後方互換維持）
   v0.3.0 (2026-03-20)
     - BATTLEモジュールをGから独立分離
       (open / attack / skill / flee / negotiate / _enemyAttack / _enemyDefeated / _checkGameOver)
@@ -31,7 +35,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.3.0">
+<meta name="version" content="0.3.1">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <style>
@@ -307,7 +311,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -781,6 +785,79 @@ const BATTLE = {
   },
 };
 
+
+// ================================================================
+// [BLOCK: FUSION] 合体・パーティ編成ロジック
+// 責務: スロット選択・合体実行・スキル継承・パーティ入れ替え
+// UIへのアクセスは最小限（renderXxx 呼び出しのみ）
+// 将来の分割先: fusion.js
+// ================================================================
+const FUSION = {
+
+  selectSlot(slot) {
+    STATE.fusionSlot = slot;
+    renderFusionScreen();
+  },
+
+  selectDemon(uid) {
+    const d = [...STATE.party, ...STATE.storage].find(x => x.uid === uid);
+    if (!d) return;
+    if (STATE.fusionSlot === 'a') {
+      if (STATE.fusionB?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
+      STATE.fusionA = d;
+    } else {
+      if (STATE.fusionA?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
+      STATE.fusionB = d;
+    }
+    STATE.fusionSlot = null;
+    renderFusionScreen();
+  },
+
+  execute() {
+    const { fusionA: a, fusionB: b } = STATE;
+    if (!a || !b) return;
+    const preview = getFusionResult(a, b);
+    if (!preview) { showToast('この組み合わせは合体できない'); return; }
+    // 素材を party / storage から除去
+    STATE.party   = STATE.party.filter(d => d.uid !== a.uid && d.uid !== b.uid);
+    STATE.storage = STATE.storage.filter(d => d.uid !== a.uid && d.uid !== b.uid);
+    // 結果悪魔を生成しスキル継承
+    const result = createDemon(preview.masterId, preview.lv);
+    result.skills = [preview.skill];
+    // パーティ空きがあれば加入、なければ倉庫へ
+    if (STATE.party.length < 3) { result.inParty = true; STATE.party.push(result); }
+    else { STATE.storage.push(result); }
+    STATE.fusions++;
+    STATE.fusionA = STATE.fusionB = null;
+    addLog(`合体成功！ ${a.name} × ${b.name} → ${result.name} Lv${result.lv}`, 'success');
+    saveGame();
+    showToast(`${result.name} が誕生した！`);
+    renderFusionScreen();
+    renderPartyBar();
+  },
+
+  toggleParty(uid) {
+    const all = [...STATE.party, ...STATE.storage];
+    const d = all.find(x => x.uid == uid);
+    if (!d) return;
+    if (d.inParty) {
+      d.inParty = false;
+      STATE.party = STATE.party.filter(x => x.uid != uid);
+      STATE.storage.push(d);
+      showToast(`${d.name} をパーティから外した`);
+    } else {
+      if (STATE.party.length >= 3) { showToast('パーティは最大3体'); return; }
+      d.inParty = true;
+      STATE.storage = STATE.storage.filter(x => x.uid != uid);
+      STATE.party.push(d);
+      showToast(`${d.name} をパーティに加えた`);
+    }
+    saveGame();
+    renderPartyScreen();
+    renderPartyBar();
+  },
+};
+
 const G={
   showScreen(id){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -848,41 +925,10 @@ const G={
 
 
 
-  selectFusionSlot(slot){STATE.fusionSlot=slot;renderFusionScreen();},
-
-  selectFusionDemon(uid){
-    const d=[...STATE.party,...STATE.storage].find(x=>x.uid===uid);
-    if(!d)return;
-    if(STATE.fusionSlot==='a'){if(STATE.fusionB?.uid===uid){showToast('同じ悪魔は選べない');return;}STATE.fusionA=d;}
-    else{if(STATE.fusionA?.uid===uid){showToast('同じ悪魔は選べない');return;}STATE.fusionB=d;}
-    STATE.fusionSlot=null;renderFusionScreen();
-  },
-
-  executeFusion(){
-    const{fusionA:a,fusionB:b}=STATE;if(!a||!b)return;
-    const p=getFusionResult(a,b);if(!p){showToast('この組み合わせは合体できない');return;}
-    STATE.party=STATE.party.filter(d=>d.uid!==a.uid&&d.uid!==b.uid);
-    STATE.storage=STATE.storage.filter(d=>d.uid!==a.uid&&d.uid!==b.uid);
-    const r=createDemon(p.masterId,p.lv);r.skills=[p.skill];
-    if(STATE.party.length<3){r.inParty=true;STATE.party.push(r);}else STATE.storage.push(r);
-    STATE.fusions++;STATE.fusionA=STATE.fusionB=null;
-    addLog(`合体成功！ ${a.name} × ${b.name} → ${r.name} Lv${r.lv}`,'success');
-    saveGame();showToast(`${r.name} が誕生した！`);renderFusionScreen();renderPartyBar();
-  },
-
-  toggleParty(uid){
-    const all=[...STATE.party,...STATE.storage],d=all.find(x=>x.uid==uid);
-    if(!d)return;
-    if(d.inParty){
-      d.inParty=false;STATE.party=STATE.party.filter(x=>x.uid!=uid);STATE.storage.push(d);
-      showToast(`${d.name} をパーティから外した`);
-    }else{
-      if(STATE.party.length>=3){showToast('パーティは最大3体');return;}
-      d.inParty=true;STATE.storage=STATE.storage.filter(x=>x.uid!=uid);STATE.party.push(d);
-      showToast(`${d.name} をパーティに加えた`);
-    }
-    saveGame();renderPartyScreen();renderPartyBar();
-  },
+  selectFusionSlot(slot){ FUSION.selectSlot(slot); },
+  selectFusionDemon(uid){  FUSION.selectDemon(uid); },
+  executeFusion(){         FUSION.execute(); },
+  toggleParty(uid){        FUSION.toggleParty(uid); },
 };
 
 // ================================================================
