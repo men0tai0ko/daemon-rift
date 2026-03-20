@@ -1,11 +1,15 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.2.1
+  Version : 0.3.0
   Updated : 2026-03-20
   Author  : ののやま
 ================================================================
   CHANGELOG
+  v0.3.0 (2026-03-20)
+    - BATTLEモジュールをGから独立分離
+      (open / attack / skill / flee / negotiate / _enemyAttack / _enemyDefeated / _checkGameOver)
+    - GはBATTLE.xxxへの委譲のみ保持（後方互換維持）
   v0.2.1 (2026-03-20)
     - SAVEブロックに SAVE_SCHEMA_VERSION を導入
     - loadGame() でスキーマ不一致時に旧データを安全破棄するバリデーション追加
@@ -27,7 +31,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.2.1">
+<meta name="version" content="0.3.0">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <style>
@@ -303,7 +307,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -620,6 +624,163 @@ function renderPartyScreen(){
 // 外部から直接呼び出し想定外のメソッドは _ プレフィックスで区別する
 // 将来の分割先: controller.js
 // ================================================================
+
+// ================================================================
+// [BLOCK: BATTLE] 戦闘ロジック
+// 責務: 戦闘ループ・ダメージ処理・交渉・ゲームオーバー判定
+// UIへのアクセスは最小限（setBattleLog / renderXxx 呼び出しのみ）
+// 将来の分割先: battle.js
+// ================================================================
+const BATTLE = {
+
+  // 戦闘画面を開く（探索ループから呼ばれる）
+  open(enemy) {
+    STATE.inBattle = true;
+    STATE.currentEnemy = enemy;
+    document.getElementById('battle-floor-text').textContent = `B${STATE.floor}F`;
+    document.getElementById('battle-title-text').textContent = enemy.isBoss ? '⚠ BOSS BATTLE' : 'ENCOUNTER';
+    const sp = document.getElementById('enemy-sprite');
+    sp.textContent = enemy.emoji;
+    sp.className = `enemy-sprite${enemy.isBoss ? ' boss' : ''}`;
+    document.getElementById('enemy-name').textContent = enemy.name;
+    document.getElementById('enemy-race-tag').textContent = enemy.race;
+    const at = document.getElementById('enemy-attr-tag');
+    at.textContent = enemy.attr;
+    at.className = `tag attr-${enemy.attr}`;
+    renderEnemyHP();
+    setBattleLog(`${enemy.name} が立ちはだかる！`);
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+    G.showScreen('screen-battle');
+  },
+
+  attack() {
+    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
+    if (!lead || !e) return;
+    const dmg = calcDamage(lead, e);
+    e.hp -= dmg;
+    const aff = AFFINITY[lead.attr]?.[e.attr] ?? 1;
+    let msg = `${lead.name}の攻撃！ ${dmg}ダメージ`;
+    if (aff >= 2) msg += '（弱点！）'; else if (aff <= 0.5) msg += '（耐性あり）';
+    setBattleLog(msg);
+    playEnemyHitAnim();
+    renderEnemyHP();
+    if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
+    setTimeout(() => BATTLE._enemyAttack(), 600);
+  },
+
+  skill() {
+    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
+    if (!lead || !e || !lead.skills.length) return;
+    const dmg = Math.floor(calcDamage(lead, e) * 1.5);
+    e.hp -= dmg;
+    setBattleLog(`${lead.name}の「${lead.skills[0]}」！ ${dmg}ダメージ`);
+    playEnemyHitAnim();
+    renderEnemyHP();
+    if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
+    setTimeout(() => BATTLE._enemyAttack(), 600);
+  },
+
+  flee() {
+    if (chance(0.6)) {
+      STATE.inBattle = false;
+      setBattleLog('うまく逃げ切った！');
+      setTimeout(() => { addLog('戦闘から逃げた', 'warn'); G.showScreen('screen-explore'); renderExplore(); }, 800);
+    } else {
+      setBattleLog('逃げられなかった！');
+      setTimeout(() => BATTLE._enemyAttack(), 600);
+    }
+  },
+
+  startNegotiate() {
+    if (STATE.currentEnemy?.isBoss) { showToast('ボスと交渉できない！'); return; }
+    document.getElementById('negotiate-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  cancelNegotiate() {
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  negotiate(tactic) {
+    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
+    if (!lead || !e) return;
+    if (tactic === '金で解決') {
+      const cost = rand(10, 20 + e.lv * 3);
+      if (STATE.macca < cost) { showToast(`₪が足りない（必要: ${cost}）`); return; }
+      STATE.macca -= cost;
+    }
+    document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+    if (chance(calcNegotiateRate(lead.lv, e.lv, tactic))) {
+      const nd = createDemon(e.masterId, e.lv);
+      if (STATE.party.length < 3) {
+        nd.inParty = true; STATE.party.push(nd);
+        setBattleLog(`${e.name}は仲間になった！（パーティ加入）`);
+      } else {
+        STATE.storage.push(nd);
+        setBattleLog(`${e.name}は仲間になった！（倉庫へ）`);
+      }
+      addLog(`${e.name}が仲魔になった！`, 'success');
+      STATE.inBattle = false;
+      STATE.floorProgress = Math.max(0, STATE.floorProgress - 1);
+      saveGame();
+      setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); }, 1200);
+    } else {
+      setBattleLog(`${e.name}は激怒した！`);
+      setTimeout(() => BATTLE._enemyAttack(), 600);
+    }
+  },
+
+  _enemyAttack() {
+    const e = STATE.currentEnemy, t = STATE.party.find(d => d.hp > 0);
+    if (!t) { BATTLE._checkGameOver(); return; }
+    const dmg = calcDamage(e, t);
+    t.hp = Math.max(0, t.hp - dmg);
+    setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);
+    renderPartyBar();
+    if (t.hp <= 0) {
+      setBattleLog(`${t.name} は倒れた…`);
+      if (STATE.party.every(d => d.hp <= 0)) setTimeout(() => BATTLE._checkGameOver(), 1000);
+    }
+  },
+
+  _enemyDefeated() {
+    const e = STATE.currentEnemy;
+    const mg = rand(10, 20 + STATE.floor * 2);
+    const eg = rand(5, 10 + STATE.floor);
+    STATE.macca += mg;
+    STATE.kills++;
+    STATE.party.filter(d => d.hp > 0).forEach(d => {
+      d.exp += eg;
+      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); }
+    });
+    setBattleLog(`${e.name}を倒した！ +${mg}₪`);
+    playEnemyHitAnim();
+    if (STATE.floorProgress >= 5 || e.isBoss) {
+      STATE.floor++;
+      STATE.floorProgress = 0;
+      updateBestFloor();
+      addLog(`B${STATE.floor}Fへ進んだ`, 'system');
+    }
+    saveGame();
+    STATE.inBattle = false;
+    setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); }, 1200);
+  },
+
+  _checkGameOver() {
+    if (!STATE.party.every(d => d.hp <= 0)) return;
+    clearInterval(STATE.exploreTimer);
+    STATE.inBattle = STATE.exploring = false;
+    document.getElementById('go-floor').textContent   = `B${STATE.floor}F`;
+    document.getElementById('go-best').textContent    = `B${STATE.bestFloor}F`;
+    document.getElementById('go-kills').textContent   = STATE.kills;
+    document.getElementById('go-fusions').textContent = STATE.fusions;
+    G.showScreen('screen-gameover');
+  },
+};
+
 const G={
   showScreen(id){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -673,109 +834,19 @@ const G={
     }
   },
 
-  _openBattle(enemy){
-    STATE.inBattle=true;STATE.currentEnemy=enemy;
-    document.getElementById('battle-floor-text').textContent=`B${STATE.floor}F`;
-    document.getElementById('battle-title-text').textContent=enemy.isBoss?'⚠ BOSS BATTLE':'ENCOUNTER';
-    const sp=document.getElementById('enemy-sprite');
-    sp.textContent=enemy.emoji;sp.className=`enemy-sprite${enemy.isBoss?' boss':''}`;
-    document.getElementById('enemy-name').textContent=enemy.name;
-    document.getElementById('enemy-race-tag').textContent=enemy.race;
-    const at=document.getElementById('enemy-attr-tag');at.textContent=enemy.attr;at.className=`tag attr-${enemy.attr}`;
-    renderEnemyHP();setBattleLog(`${enemy.name} が立ちはだかる！`);
-    document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('battle-actions').style.display='';
-    G.showScreen('screen-battle');
-  },
+  _openBattle(enemy){ BATTLE.open(enemy); },
 
-  doAttack(){
-    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
-    if(!lead||!e)return;
-    const dmg=calcDamage(lead,e);e.hp-=dmg;
-    const aff=AFFINITY[lead.attr]?.[e.attr]??1;
-    let msg=`${lead.name}の攻撃！ ${dmg}ダメージ`;
-    if(aff>=2)msg+='（弱点！）';else if(aff<=.5)msg+='（耐性あり）';
-    setBattleLog(msg);playEnemyHitAnim();renderEnemyHP();
-    if(e.hp<=0){G._enemyDefeated();return;}
-    setTimeout(()=>G._enemyAttack(),600);
-  },
+  doAttack(){ BATTLE.attack(); },
 
-  doSkill(){
-    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
-    if(!lead||!e||!lead.skills.length)return;
-    const dmg=Math.floor(calcDamage(lead,e)*1.5);e.hp-=dmg;
-    setBattleLog(`${lead.name}の「${lead.skills[0]}」！ ${dmg}ダメージ`);
-    playEnemyHitAnim();renderEnemyHP();
-    if(e.hp<=0){G._enemyDefeated();return;}
-    setTimeout(()=>G._enemyAttack(),600);
-  },
+  doSkill(){ BATTLE.skill(); },
 
-  doFlee(){
-    if(chance(.6)){
-      STATE.inBattle=false;setBattleLog('うまく逃げ切った！');
-      setTimeout(()=>{addLog('戦闘から逃げた','warn');G.showScreen('screen-explore');renderExplore();},800);
-    }else{setBattleLog('逃げられなかった！');setTimeout(()=>G._enemyAttack(),600);}
-  },
+  doFlee(){ BATTLE.flee(); },
 
-  startNegotiate(){
-    if(STATE.currentEnemy?.isBoss){showToast('ボスと交渉できない！');return;}
-    document.getElementById('negotiate-panel').classList.add('active');
-    document.getElementById('battle-actions').style.display='none';
-  },
-  cancelNegotiate(){
-    document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('battle-actions').style.display='';
-  },
-  doNegotiate(tactic){
-    const e=STATE.currentEnemy,lead=STATE.party.find(d=>d.hp>0);
-    if(!lead||!e)return;
-    if(tactic==='金で解決'){
-      const cost=rand(10,20+e.lv*3);
-      if(STATE.macca<cost){showToast(`₪が足りない（必要: ${cost}）`);return;}
-      STATE.macca-=cost;
-    }
-    document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('battle-actions').style.display='';
-    if(chance(calcNegotiateRate(lead.lv,e.lv,tactic))){
-      const nd=createDemon(e.masterId,e.lv);
-      if(STATE.party.length<3){nd.inParty=true;STATE.party.push(nd);setBattleLog(`${e.name}は仲間になった！（パーティ加入）`);}
-      else{STATE.storage.push(nd);setBattleLog(`${e.name}は仲間になった！（倉庫へ）`);}
-      addLog(`${e.name}が仲魔になった！`,'success');
-      STATE.inBattle=false;STATE.floorProgress=Math.max(0,STATE.floorProgress-1);
-      saveGame();setTimeout(()=>{G.showScreen('screen-explore');renderExplore();},1200);
-    }else{setBattleLog(`${e.name}は激怒した！`);setTimeout(()=>G._enemyAttack(),600);}
-  },
+  startNegotiate(){ BATTLE.startNegotiate(); },
+  cancelNegotiate(){ BATTLE.cancelNegotiate(); },
+  doNegotiate(tactic){ BATTLE.negotiate(tactic); },
 
-  _enemyAttack(){
-    const e=STATE.currentEnemy,t=STATE.party.find(d=>d.hp>0);
-    if(!t){G._checkGameOver();return;}
-    const dmg=calcDamage(e,t);t.hp=Math.max(0,t.hp-dmg);
-    setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);renderPartyBar();
-    if(t.hp<=0){setBattleLog(`${t.name} は倒れた…`);if(STATE.party.every(d=>d.hp<=0))setTimeout(()=>G._checkGameOver(),1000);}
-  },
 
-  _enemyDefeated(){
-    const e=STATE.currentEnemy;
-    const mg=rand(10,20+STATE.floor*2),eg=rand(5,10+STATE.floor);
-    STATE.macca+=mg;STATE.kills++;
-    STATE.party.filter(d=>d.hp>0).forEach(d=>{
-      d.exp+=eg;if(d.exp>=d.expNext){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');}
-    });
-    setBattleLog(`${e.name}を倒した！ +${mg}₪`);playEnemyHitAnim();
-    if(STATE.floorProgress>=5||e.isBoss){STATE.floor++;STATE.floorProgress=0;updateBestFloor();addLog(`B${STATE.floor}Fへ進んだ`,'system');}
-    saveGame();STATE.inBattle=false;
-    setTimeout(()=>{G.showScreen('screen-explore');renderExplore();},1200);
-  },
-
-  _checkGameOver(){
-    if(!STATE.party.every(d=>d.hp<=0))return;
-    clearInterval(STATE.exploreTimer);STATE.inBattle=STATE.exploring=false;
-    document.getElementById('go-floor').textContent=`B${STATE.floor}F`;
-    document.getElementById('go-best').textContent=`B${STATE.bestFloor}F`;
-    document.getElementById('go-kills').textContent=STATE.kills;
-    document.getElementById('go-fusions').textContent=STATE.fusions;
-    G.showScreen('screen-gameover');
-  },
 
   selectFusionSlot(slot){STATE.fusionSlot=slot;renderFusionScreen();},
 
