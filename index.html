@@ -1,11 +1,26 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.4.1
+  Version : 0.4.3
   Updated : 2026-03-20
   Author  : ののやま
 ================================================================
   CHANGELOG
+  v0.4.3 (2026-03-20)
+    - ITEMモジュール追加（6種: 回復薬/万能薬/スキル石/覚醒の書/マッカ袋/守りの御札）
+        tryDrop(): 探索自動討伐時にフロア依存確率でドロップ（8〜20%）
+        use(): アイテム使用効果の適用（スキル石・御札はフラグ管理）
+    - SAVE_KEYS に items を追加（セーブ対象）
+    - FUSION.execute() にスキル石による確定継承を統合
+    - BATTLE._enemyAttack() に守りの御札による無効化を統合
+  v0.4.2 (2026-03-20)
+    - バランス調整
+        spawnEnemy: 線形スケール → 対数スケールに変更（高フロア指数爆発を修正）
+        敵スケール係数: 0.35 → 0.45 / ボス倍率: 2.5× → 1.9×
+        calcDamage: 防御係数 0.4 → 0.5（防御の効果を強化）
+        ピクシー初期ステータス強化（F1勝率18% → 68%）
+        LvUP時HP回復量増加（3-6 → 5-10）
+        目標勝率: F1=65-75% / F10BOSS=50-60% / F20-30BOSS=70-80%
   v0.4.1 (2026-03-20)
     - SKILLモジュール追加
         スキルマスター定義（37スキル: attack/heal/buff/debuff/special）
@@ -67,7 +82,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.4.1">
+<meta name="version" content="0.4.3">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <style>
@@ -371,7 +386,7 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.4.3';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -382,7 +397,7 @@ const APP_NAME    = 'DAEMON RIFT';
 // 悪魔マスターデータ — Phase 4 で 20 体以上に拡充予定
 const DEMON_MASTER = [
   // ── C ランク（フロア1〜10帯）──
-  { id:1,  name:"ピクシー",        race:"妖精",   attr:"氷", emoji:"🧚", lv:1,  hp:30,  atk:8,  def:5,  spd:12, skills:["ブフ"],                rare:"C" },
+  { id:1,  name:"ピクシー",        race:"妖精",   attr:"氷", emoji:"🧚", lv:1,  hp:40,  atk:12, def:7,  spd:12, skills:["ブフ"],                rare:"C" },
   { id:2,  name:"スライム",        race:"妖精",   attr:"物", emoji:"🫧", lv:1,  hp:25,  atk:6,  def:8,  spd:8,  skills:["たたく"],              rare:"C" },
   { id:3,  name:"コボルド",        race:"妖精",   attr:"物", emoji:"🐺", lv:2,  hp:35,  atk:10, def:6,  spd:10, skills:["噛みつき"],            rare:"C" },
   { id:4,  name:"ジャックランタン",race:"鬼神",   attr:"炎", emoji:"🎃", lv:3,  hp:45,  atk:12, def:7,  spd:9,  skills:["アギ"],                rare:"C" },
@@ -482,7 +497,7 @@ const AREAS = [
 //
 // 将来の分割先: state.js
 // ================================================================
-const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage'];
+const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items'];
 
 const STATE = {
   // セーブ対象
@@ -533,8 +548,9 @@ function createDemon(masterId,overrideLv=null){
 function spawnEnemy(floor,isBoss=false){
   const pool=DEMON_MASTER.filter(d=>d.lv<=Math.ceil(floor/3)+2);
   const base=pool[rand(0,pool.length-1)];
-  const lv=clamp(rand(floor,floor+2),1,50);
-  const s=(1+(floor-1)*0.08)*(isBoss?2.5:1);
+  const lv=clamp(rand(floor,floor+2),1,60);
+  // 線形スケールは高フロアで指数爆発するため対数スケールに変更
+  const s=(1+Math.log1p(floor-1)*0.45)*(isBoss?1.9:1);
   return{
     name:isBoss?`【BOSS】${base.name}`:base.name,
     race:base.race,attr:base.attr,emoji:base.emoji,
@@ -546,7 +562,7 @@ function spawnEnemy(floor,isBoss=false){
 
 // ダメージ計算（属性相性・分散込み）
 function calcDamage(att,def){
-  const base=Math.max(1,att.atk-def.def*0.4);
+  const base=Math.max(1,att.atk-def.def*0.5);
   const aff=AFFINITY[att.attr]?.[def.attr]??1;
   return Math.floor(base*aff*(0.85+Math.random()*0.3));
 }
@@ -570,7 +586,7 @@ function getFusionResult(a,b){
 // レベルアップ処理（STATEの悪魔オブジェクトを直接更新する）
 function applyLevelUp(demon){
   demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
-  demon.maxHp+=rand(3,6);demon.hp=demon.maxHp;
+  demon.maxHp+=rand(5,10);demon.hp=demon.maxHp;
   demon.atk+=rand(1,2);demon.def+=rand(1,2);
 }
 
@@ -687,6 +703,127 @@ const SKILL = {
   // スキル説明を取得する（UIでのツールチップ用）
   describe(skillName) {
     return SKILL.MASTER[skillName]?.desc ?? skillName;
+  },
+};
+
+
+// ================================================================
+// [BLOCK: ITEM] アイテム管理・使用効果
+// 責務: アイテム定義・所持管理・使用効果の適用
+// 将来の分割先: item.js
+// ================================================================
+const ITEM = {
+
+  // アイテムマスター定義
+  MASTER: {
+    "回復薬":     { icon:"🧪", desc:"仲魔1体のHPを30%回復",      maxStack:5 },
+    "万能薬":     { icon:"💊", desc:"仲魔1体のHPを全回復",        maxStack:3 },
+    "スキル石":   { icon:"💎", desc:"合体時スキルを確定継承させる", maxStack:3 },
+    "覚醒の書":   { icon:"📖", desc:"仲魔を即座にLvUP",           maxStack:2 },
+    "マッカ袋":   { icon:"💰", desc:"マッカを50〜150₪獲得",       maxStack:9 },
+    "守りの御札": { icon:"🛡", desc:"次の被ダメージを1回無効化",   maxStack:3 },
+  },
+
+  // STATE.items 初期化（STATEに items フィールドを追加して管理）
+  init() {
+    if (!STATE.items) STATE.items = {};
+  },
+
+  // 所持数取得
+  count(itemName) {
+    ITEM.init();
+    return STATE.items[itemName] ?? 0;
+  },
+
+  // アイテム追加（上限チェック付き）
+  add(itemName, qty = 1) {
+    ITEM.init();
+    const master = ITEM.MASTER[itemName];
+    if (!master) return false;
+    const current = ITEM.count(itemName);
+    const added = Math.min(qty, master.maxStack - current);
+    if (added <= 0) return false;
+    STATE.items[itemName] = current + added;
+    return true;
+  },
+
+  // アイテム使用（対象: 仲魔インスタンス or null）
+  // 戻り値: { ok: true, msg } | { ok: false, msg }
+  use(itemName, target = null) {
+    ITEM.init();
+    if (ITEM.count(itemName) <= 0) return { ok: false, msg: `${itemName}がない` };
+    let msg = '';
+    switch (itemName) {
+      case '回復薬': {
+        const t = target ?? STATE.party.find(d => d.hp > 0);
+        if (!t) return { ok: false, msg: '対象がいない' };
+        const amount = Math.floor(t.maxHp * 0.3);
+        t.hp = Math.min(t.maxHp, t.hp + amount);
+        msg = `${t.name}のHPが ${amount} 回復した`;
+        break;
+      }
+      case '万能薬': {
+        const t = target ?? STATE.party.find(d => d.hp > 0);
+        if (!t) return { ok: false, msg: '対象がいない' };
+        t.hp = t.maxHp;
+        msg = `${t.name}のHPが全回復した`;
+        break;
+      }
+      case 'スキル石': {
+        // 合体実行時に FUSION.execute() が参照するフラグを立てる
+        STATE._skillStoneActive = true;
+        msg = '次の合体でスキルが確定継承される';
+        break;
+      }
+      case '覚醒の書': {
+        const t = target ?? STATE.party.find(d => d.hp > 0);
+        if (!t) return { ok: false, msg: '対象がいない' };
+        applyLevelUp(t);
+        msg = `${t.name}がLv${t.lv}にレベルアップした！`;
+        AUDIO.seLevelUp();
+        ANIM.levelUpBanner(t.name);
+        break;
+      }
+      case 'マッカ袋': {
+        const gain = rand(50, 150);
+        STATE.macca += gain;
+        msg = `₪ ${gain} 獲得した`;
+        break;
+      }
+      case '守りの御札': {
+        STATE._guardActive = true;
+        msg = '次の攻撃を1回無効化する';
+        break;
+      }
+      default:
+        return { ok: false, msg: `未実装アイテム: ${itemName}` };
+    }
+    STATE.items[itemName]--;
+    if (STATE.items[itemName] <= 0) delete STATE.items[itemName];
+    return { ok: true, msg };
+  },
+
+  // 探索報酬としてランダムにアイテムをドロップ
+  // floor が高いほどレアアイテム出現率UP
+  tryDrop(floor) {
+    const rate = 0.08 + Math.min(floor * 0.002, 0.12); // 8%〜20%
+    if (Math.random() > rate) return null;
+    const pool = floor <= 10
+      ? ['回復薬','マッカ袋']
+      : floor <= 30
+        ? ['回復薬','万能薬','マッカ袋','守りの御札']
+        : ['回復薬','万能薬','スキル石','覚醒の書','マッカ袋','守りの御札'];
+    const name = pool[Math.floor(Math.random() * pool.length)];
+    const added = ITEM.add(name);
+    return added ? name : null;
+  },
+
+  // 所持アイテム一覧を配列で返す（UI描画用）
+  list() {
+    ITEM.init();
+    return Object.entries(STATE.items).map(([name, qty]) => ({
+      name, qty, ...ITEM.MASTER[name],
+    }));
   },
 };
 
@@ -1275,6 +1412,12 @@ const BATTLE = {
     if (!t) { BATTLE._checkGameOver(); return; }
     const dmg = calcDamage(e, t);
     t.hp = Math.max(0, t.hp - dmg);
+    if (STATE._guardActive) {
+      STATE._guardActive = false;
+      setBattleLog(`${e.name}の攻撃を御札が防いだ！`);
+      renderPartyBar();
+      return;
+    }
     AUDIO.seHit();
     setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);
     renderPartyBar();
@@ -1360,8 +1503,11 @@ const FUSION = {
     STATE.storage = STATE.storage.filter(d => d.uid !== a.uid && d.uid !== b.uid);
     // 結果悪魔を生成しスキル継承
     const result = createDemon(preview.masterId, preview.lv);
-    // スキル継承: SKILLモジュール経由（将来スキル石で確定継承に拡張）
-    const inherited = SKILL.inheritSkill(a, b);
+    // スキル継承: スキル石使用中は確定継承、それ以外はランダム
+    const inherited = STATE._skillStoneActive
+      ? (a.skills[0] ?? b.skills[0] ?? null)  // 確定: 素材Aのスキル優先
+      : SKILL.inheritSkill(a, b);
+    if (STATE._skillStoneActive) { STATE._skillStoneActive = false; addLog('💎 スキル石で確定継承！', 'success'); }
     result.skills = inherited ? [inherited] : [];
     // パーティ空きがあれば加入、なければ倉庫へ
     if (STATE.party.length < 3) { result.inParty = true; STATE.party.push(result); }
@@ -1447,6 +1593,8 @@ const G={
     }else{
       const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
       const auto=spawnEnemy(STATE.floor);
+      const drop = ITEM.tryDrop(STATE.floor);
+      if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
       addLog(`${auto.name} を自動討伐（+${gain}₪）`);renderExplore();
     }
   },
