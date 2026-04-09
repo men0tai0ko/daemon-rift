@@ -216,6 +216,18 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 .attr-呪{background:rgba(142,68,173,.3);color:var(--purple)}
 .race-tag{background:rgba(255,255,255,.08);color:var(--muted)}.party-tag{background:rgba(0,212,255,.15);color:var(--cyan);font-size:9px}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* party screen tabs */
+.party-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2)}
+.party-tab{flex:1;padding:10px;font-size:12px;letter-spacing:1px;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-family:inherit;cursor:pointer;transition:color .15s,border-color .15s;-webkit-tap-highlight-color:transparent}
+.party-tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+/* item cards */
+.item-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:center;gap:12px}
+.item-icon{font-size:32px;flex-shrink:0}
+.item-info{flex:1;min-width:0}
+.item-name{font-size:13px;font-weight:bold;margin-bottom:2px}
+.item-desc{font-size:11px;color:var(--muted);margin-bottom:4px}
+.item-qty{font-size:11px;color:var(--gold)}
+.item-empty{color:var(--muted);text-align:center;padding:40px;font-size:13px}
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);border:1px solid var(--border);padding:8px 16px;border-radius:20px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap;z-index:100}
 #toast.show{opacity:1}
 
@@ -363,7 +375,12 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
       <button class="btn" style="padding:8px 12px;font-size:12px;" onclick="G.backToExplore()">← 戻る</button>
       <span class="party-screen-title">仲魔一覧</span>
     </div>
+    <div class="party-tabs">
+      <button class="party-tab active" id="tab-party" onclick="UI.switchPartyTab('party')">仲魔</button>
+      <button class="party-tab" id="tab-item" onclick="UI.switchPartyTab('item')">アイテム</button>
+    </div>
     <div class="party-screen-content" id="party-screen-content"></div>
+    <div class="party-screen-content" id="party-item-content" style="display:none"></div>
   </div>
 
   <div id="screen-gameover" class="screen">
@@ -500,14 +517,15 @@ const AREAS = [
 const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items'];
 
 const STATE = {
-  // セーブ対象
+  // セーブ対象 [PERSIST]
   floor:1, macca:100, kills:0, fusions:0, bestFloor:1,
-  party:[], storage:[],
-  // ランタイム専用（セーブ対象外）
+  party:[], storage:[], items:{},
+  // ランタイム専用（セーブ対象外）[RUNTIME]
   floorProgress:0,
   exploring:false, exploreTimer:null,
   inBattle:false, currentEnemy:null,
   fusionSlot:null, fusionA:null, fusionB:null,
+  _skillStoneActive:false, _guardActive:false,
 };
 
 // ================================================================
@@ -990,6 +1008,57 @@ const UI = {
       el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty ? 'warn' : 'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
       content.appendChild(el);
     });
+  },
+
+  // アイテム一覧画面を描画する
+  renderItemScreen() {
+    const content = document.getElementById('party-item-content');
+    content.innerHTML = '';
+    const items = ITEM.list();
+    if (!items.length) {
+      content.innerHTML = '<div class="item-empty">アイテムがない</div>';
+      return;
+    }
+    items.forEach(({ name, qty, icon, desc }) => {
+      const el = document.createElement('div');
+      el.className = 'item-card';
+      // 回復系・覚醒の書・御札のみ「使う」ボタンを表示（スキル石はラボで使用）
+      const usable = ['回復薬', '万能薬', '覚醒の書', 'マッカ袋', '守りの御札'].includes(name);
+      el.innerHTML = `<div class="item-icon">${icon}</div><div class="item-info"><div class="item-name">${name}</div><div class="item-desc">${desc}</div><div class="item-qty">× ${qty}</div></div>${usable ? `<button class="btn success action-btn" onclick="UI._useItem('${name}')">使う</button>` : '<div style="font-size:10px;color:var(--muted);flex-shrink:0">合体時使用</div>'}`;
+      content.appendChild(el);
+    });
+  },
+
+  // アイテムを使用して画面を更新する（探索画面でない場合はログへ）
+  _useItem(itemName) {
+    const result = ITEM.use(itemName);
+    if (!result.ok) { showToast(result.msg); return; }
+    addLog(`🎒 ${result.msg}`, 'success');
+    showToast(result.msg);
+    saveGame();
+    UI.renderItemScreen();
+    UI.renderPartyBar();
+  },
+
+  // 仲魔/アイテムタブを切り替える
+  switchPartyTab(tab) {
+    const partyContent = document.getElementById('party-screen-content');
+    const itemContent  = document.getElementById('party-item-content');
+    const tabParty     = document.getElementById('tab-party');
+    const tabItem      = document.getElementById('tab-item');
+    if (tab === 'party') {
+      partyContent.style.display = '';
+      itemContent.style.display  = 'none';
+      tabParty.classList.add('active');
+      tabItem.classList.remove('active');
+      UI.renderPartyScreen();
+    } else {
+      partyContent.style.display = 'none';
+      itemContent.style.display  = '';
+      tabParty.classList.remove('active');
+      tabItem.classList.add('active');
+      UI.renderItemScreen();
+    }
   },
 };
 
@@ -1549,7 +1618,7 @@ const G={
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     if(id==='screen-fusion') UI.renderFusionScreen();
-    if(id==='screen-party')  UI.renderPartyScreen();
+    if(id==='screen-party')  UI.switchPartyTab('party');
   },
   backToExplore(){G.showScreen('screen-explore');},
 
