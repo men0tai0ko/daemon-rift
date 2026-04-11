@@ -9,12 +9,20 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.4
-**現在の状態:** Phase 5 完了・リリース済み。次フェーズはバランス調整（F50以降の難易度）。
+**現在のバージョン:** v0.4.5
+**現在の状態:** リリース済み。ISS-009（引継マッカシステム）を実装。次フェーズはF50以降の難易度調整・Android確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.4.5（2026-04-10）
+- **ISS-009 引継マッカシステム実装:** ゲームオーバー時に `bestFloor` から引継マッカを計算・保存
+  - `calcLegacyBonus(bestFloor)` を `[BLOCK: ENGINE]` に純粋関数として追加
+  - `STATE.legacyMacca` を `SAVE_KEYS` に追加
+  - `BATTLE._checkGameOver()` で計算・保存・リザルト画面に「次回引継額」表示
+  - `G.startNewGame()` で引継マッカを初期マッカに加算、ログ表示
+- **`SAVE_SCHEMA_VERSION` を 3 に更新**（`legacyMacca` フィールド追加）
 
 ### v0.4.4（2026-04-10）
 - **アイテム画面UI実装:** 仲魔一覧画面（screen-party）にタブを追加
@@ -104,7 +112,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 
 ```javascript
 APP_VERSION          = '0.4.4'   // script.js [BLOCK: META]
-SAVE_SCHEMA_VERSION  = 2         // script.js [BLOCK: SAVE]
+SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'
 探索間隔              = 2000ms (setInterval)
@@ -140,7 +148,7 @@ LS_KEY_BEST          = 'daemonrift_best'
 ファイル構成: index.html / style.css / script.js（3ファイル構成）
 公開URL: https://men0tai0ko.github.io/daemon-rift/
 
-【現在のバージョン】v0.4.4（リリース済み）
+【現在のバージョン】v0.4.5
 
 【実装済みモジュール（script.js内ブロック順）】
 META / DATA / STATE / UTIL / ENGINE / SKILL / ITEM / SAVE / UI / AUDIO / ANIM / BATTLE / FUSION / G(コントローラ)

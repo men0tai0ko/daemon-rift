@@ -71,7 +71,7 @@ HTML（onclick属性）
 
 ### PERSIST（localStorageに保存される）
 
-`SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items']`
+`SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items','legacyMacca']`
 
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
@@ -83,6 +83,7 @@ HTML（onclick属性）
 | `party` | Demon[] | パーティ（最大3体） |
 | `storage` | Demon[] | 倉庫（無制限） |
 | `items` | Record<string,number> | アイテム所持数 |
+| `legacyMacca` | number | 次回引継マッカ（ゲームオーバー時に算出） |
 
 ### RUNTIME（セーブ対象外・セッション限り）
 
@@ -198,7 +199,7 @@ loadGame()
   → 不一致: データ破棄 → null 返却
   → 一致: データ返却
 
-// 注意: SAVE_SCHEMA_VERSION（現在: 2）と保存データの _sv が一致しない場合、旧データは自動破棄される
+// 注意: SAVE_SCHEMA_VERSION（現在: 3）と保存データの _sv が一致しない場合、旧データは自動破棄される
 ```
 
 ---

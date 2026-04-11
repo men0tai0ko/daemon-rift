@@ -47,6 +47,7 @@
 | 状態 | タスク | 備考 |
 |------|--------|------|
 | ⬜ | F50以降の難易度上限調整 | 現在勝率90%+。`spawnEnemy` スケール係数またはボス倍率を調整（ISS-006） |
+| ✅ | ISS-009 引継マッカシステム実装 | v0.4.5で完了。calcLegacyBonus追加・legacyMacca STATE追加 |
 | ⬜ | Android Chrome 実機動作確認 | iOS Safari のみ確認済み。Android 未検証 |
 
 ---
@@ -66,6 +67,14 @@
 ## ■ バージョン履歴（全バージョン）
 
 > index.html のコメントヘッダーには最新バージョンと日付のみ記載。詳細履歴はこのファイルで管理。
+
+### v0.4.5（2026-04-10）
+- ISS-009 引継マッカシステム実装
+  - `calcLegacyBonus(bestFloor)` を ENGINE に追加（対数スケール・上限500₪）
+  - `STATE.legacyMacca` を SAVE_KEYS に追加
+  - `BATTLE._checkGameOver()` で計算・保存・リザルト表示
+  - `G.startNewGame()` で引継マッカを初期マッカに加算
+- `SAVE_SCHEMA_VERSION` を 2 → 3 に更新
 
 ### v0.4.4（2026-04-10）
 - アイテム画面UI実装（仲魔画面にタブ追加）

@@ -113,12 +113,13 @@ const AREAS = [
 //
 // 将来の分割先: state.js
 // ================================================================
-const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items'];
+const SAVE_KEYS = ['floor','macca','kills','fusions','bestFloor','party','storage','items','legacyMacca']; // ISS-009: legacyMacca 追加
 
 const STATE = {
   // セーブ対象 [PERSIST]
   floor:1, macca:100, kills:0, fusions:0, bestFloor:1,
   party:[], storage:[], items:{},
+  legacyMacca:0, // ISS-009: ゲームオーバー時に計算・保存する引継マッカ
   // ランタイム専用（セーブ対象外）[RUNTIME]
   floorProgress:0,
   exploring:false, exploreTimer:null,
@@ -205,6 +206,12 @@ function applyLevelUp(demon){
   demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
   demon.maxHp+=rand(5,10);demon.hp=demon.maxHp;
   demon.atk+=rand(1,2);demon.def+=rand(1,2);
+}
+
+// ISS-009: 次回引継マッカを計算する純粋関数（副作用なし）
+// 計算式: floor(log1p(bestFloor) × 80)、上限 500₪
+function calcLegacyBonus(bestFloor){
+  return Math.min(500, Math.floor(Math.log1p(bestFloor) * 80));
 }
 
 
@@ -451,7 +458,8 @@ const ITEM = {
 const LS_KEY_SAVE='daemonrift_save';
 const LS_KEY_BEST='daemonrift_best';
 // セーブデータの構造が変わった際はここを上げる（旧データを破棄して再起動）
-const SAVE_SCHEMA_VERSION=2;
+// v3: legacyMacca フィールド追加（ISS-009）
+const SAVE_SCHEMA_VERSION=3;
 
 // SAVE_KEYS に列挙されたフィールドのみを localStorage に保存する
 function saveGame(){
@@ -1124,6 +1132,9 @@ const BATTLE = {
     if (!STATE.party.every(d => d.hp <= 0)) return;
     clearInterval(STATE.exploreTimer);
     STATE.inBattle = STATE.exploring = false;
+    // ISS-009: ゲームオーバー確定時に引継マッカを計算して保存
+    STATE.legacyMacca = calcLegacyBonus(STATE.bestFloor);
+    saveGame();
     AUDIO.seDefeat();
     AUDIO.stopBgm();
     ANIM.screenShake();
@@ -1131,6 +1142,8 @@ const BATTLE = {
     document.getElementById('go-best').textContent    = `B${STATE.bestFloor}F`;
     document.getElementById('go-kills').textContent   = STATE.kills;
     document.getElementById('go-fusions').textContent = STATE.fusions;
+    // ISS-009: 次回引継額をリザルトに表示
+    document.getElementById('go-legacy').textContent  = `₪ ${STATE.legacyMacca}`;
     G.showScreen('screen-gameover');
   },
 
@@ -1270,14 +1283,20 @@ const G={
 
   startNewGame(){
     clearInterval(STATE.exploreTimer);
+    // ISS-009: legacyMacca を退避（Object.assign で上書きされる前に保持）
+    const bonus = STATE.legacyMacca ?? 0;
     Object.assign(STATE,{floor:1,macca:100,kills:0,fusions:0,bestFloor:1,
       floorProgress:0,exploring:false,exploreTimer:null,
-      party:[],storage:[],fusionA:null,fusionB:null,items:{}});
+      party:[],storage:[],fusionA:null,fusionB:null,items:{},legacyMacca:0});
+    // ISS-009: 引継マッカを初期マッカに加算
+    STATE.macca += bonus;
     const s=createDemon(1,1);s.inParty=true;
     STATE.party=[s];STATE.storage=[createDemon(4,2)];
     updateBestFloor();G.showScreen('screen-explore');renderExplore();
     addLog('新たな探索者が廃都へ踏み込んだ…','system');
     addLog(`初期仲魔：${s.name} を連れている`,'success');
+    // ISS-009: 引継ボーナスがある場合のみログに表示
+    if (bonus > 0) addLog(`前回の記憶から ₪${bonus} を引き継いだ`, 'system');
   },
 
   continueGame(){
