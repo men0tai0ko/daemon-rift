@@ -9,12 +9,17 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.6
-**現在の状態:** リリース済み。ISS-006（F50以降難易度上限調整）を実装。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.4.7
+**現在の状態:** リリース済み。ISS-005/007/008を実装。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.4.7（2026-04-11）
+- **ISS-005 序盤ドロップ率補正:** `ITEM.tryDrop()` で F10未満に +5% 補正を追加
+- **ISS-008 デバフ永続解消:** `BATTLE._enemyDefeated()` で `_debuff` フィールドをリセット・ログに「戦闘終了まで」を明記
+- **ISS-007 `ITEM.init()` 重複削除:** `count/add/use/list` 内の `init()` 呼び出しを削除。`startNewGame` の `items:{}` と `continueGame` のフォールバックで初期化を保証
 
 ### v0.4.6（2026-04-11）
 - **ISS-006 F50以降の難易度上限調整:** `spawnEnemy()` のスケール計算に使う `floor` を `clamp(floor,1,50)` でキャップ
@@ -114,7 +119,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.4.6'   // script.js [BLOCK: META]
+APP_VERSION          = '0.4.7'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

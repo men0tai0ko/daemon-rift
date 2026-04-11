@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.6';
+const APP_VERSION = '0.4.7';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -288,7 +288,7 @@ const SKILL = {
       const penalty = Math.floor(target.atk * 0.2);
       target._debuff = (target._debuff ?? 0) + penalty;
       target.atk = Math.max(1, target.atk - penalty);
-      return { dmg: 0, msg: `${attacker.name}の「${skillName}」！ ${target.name}弱体化`, effect: 'debuff' };
+      return { dmg: 0, msg: `${attacker.name}の「${skillName}」！ ${target.name}弱体化（戦闘終了まで）`, effect: 'debuff' };
     }
 
     if (s.type === 'special') {
@@ -358,13 +358,11 @@ const ITEM = {
 
   // 所持数取得
   count(itemName) {
-    ITEM.init();
     return STATE.items[itemName] ?? 0;
   },
 
   // アイテム追加（上限チェック付き）
   add(itemName, qty = 1) {
-    ITEM.init();
     const master = ITEM.MASTER[itemName];
     if (!master) return false;
     const current = ITEM.count(itemName);
@@ -377,7 +375,6 @@ const ITEM = {
   // アイテム使用（対象: 仲魔インスタンス or null）
   // 戻り値: { ok: true, msg } | { ok: false, msg }
   use(itemName, target = null) {
-    ITEM.init();
     if (ITEM.count(itemName) <= 0) return { ok: false, msg: `${itemName}がない` };
     let msg = '';
     switch (itemName) {
@@ -432,8 +429,10 @@ const ITEM = {
 
   // 探索報酬としてランダムにアイテムをドロップ
   // floor が高いほどレアアイテム出現率UP
+  // ISS-005: F10未満の序盤は難易度ムラ緩和のため+5%補正
   tryDrop(floor) {
-    const rate = 0.08 + Math.min(floor * 0.002, 0.12); // 8%〜20%
+    const earlyBonus = floor < 10 ? 0.05 : 0;
+    const rate = 0.08 + Math.min(floor * 0.002, 0.12) + earlyBonus; // 8%〜20%（序盤は+5%）
     if (Math.random() > rate) return null;
     const pool = floor <= 10
       ? ['回復薬','マッカ袋']
@@ -447,7 +446,6 @@ const ITEM = {
 
   // 所持アイテム一覧を配列で返す（UI描画用）
   list() {
-    ITEM.init();
     return Object.entries(STATE.items).map(([name, qty]) => ({
       name, qty, ...ITEM.MASTER[name],
     }));
@@ -1120,6 +1118,8 @@ const BATTLE = {
     });
     setBattleLog(`${e.name}を倒した！ +${mg}₪`);
     playEnemyHitAnim();
+    // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
+    STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
     if (STATE.floorProgress >= 5 || e.isBoss) {
       STATE.floor++;
       STATE.floorProgress = 0;
@@ -1307,6 +1307,8 @@ const G={
     const data=loadGame();
     if(!data){showToast('セーブデータが見つからない');return;}
     SAVE_KEYS.forEach(k=>{STATE[k]=data[k];});
+    // ISS-007: ロードデータにitemsが存在しない場合の安全フォールバック
+    if(!STATE.items) STATE.items={};
     STATE.exploring=false;
     G.showScreen('screen-explore');renderExplore();
     addLog('探索を再開した…','system');
