@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.4';
+const APP_VERSION = '0.4.6';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -169,7 +169,9 @@ function spawnEnemy(floor,isBoss=false){
   const base=pool[rand(0,pool.length-1)];
   const lv=clamp(rand(floor,floor+2),1,60);
   // 線形スケールは高フロアで指数爆発するため対数スケールに変更
-  const s=(1+Math.log1p(floor-1)*0.45)*(isBoss?1.9:1);
+  // ISS-006: F50以降の勝率過多を抑制するため、スケール計算用floorをF50でキャップ
+  const scaledFloor=clamp(floor,1,50);
+  const s=(1+Math.log1p(scaledFloor-1)*0.45)*(isBoss?1.9:1);
   return{
     name:isBoss?`【BOSS】${base.name}`:base.name,
     race:base.race,attr:base.attr,emoji:base.emoji,

@@ -9,12 +9,18 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.5
-**現在の状態:** リリース済み。ISS-009（引継マッカシステム）を実装。次フェーズはF50以降の難易度調整・Android確認。
+**現在のバージョン:** v0.4.6
+**現在の状態:** リリース済み。ISS-006（F50以降難易度上限調整）を実装。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.4.6（2026-04-11）
+- **ISS-006 F50以降の難易度上限調整:** `spawnEnemy()` のスケール計算に使う `floor` を `clamp(floor,1,50)` でキャップ
+  - 変更箇所は `[BLOCK: ENGINE]` の `spawnEnemy()` 内1行のみ
+  - F1〜F49 のスケールは完全に無変更
+  - SAVE_SCHEMA_VERSION・STATE・SAVE_KEYS への変更なし
 
 ### v0.4.5（2026-04-10）
 - **ISS-009 引継マッカシステム実装:** ゲームオーバー時に `bestFloor` から引継マッカを計算・保存
@@ -50,10 +56,7 @@
 
 優先度順。詳細は `tasks.md` を参照。
 
-### 1. F50以降の難易度上限調整（優先度: 中）
-F50以降の勝率が90%+でやりごたえ不足の可能性。`spawnEnemy()` のスケール係数またはボス倍率を調整する。
-
-### 2. Android Chrome 実機動作確認（優先度: 中）
+### 1. Android Chrome 実機動作確認（優先度: 中）
 iOS Safari は確認済み。Android Chrome での動作・レイアウト・音声を未確認。
 
 ---
@@ -111,7 +114,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.4.4'   // script.js [BLOCK: META]
+APP_VERSION          = '0.4.6'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'
@@ -132,8 +135,8 @@ LS_KEY_BEST          = 'daemonrift_best'
 | F10 | BOSS | 53% | ✅ 適正 |
 | F20 | BOSS | 72% | ✅ 適正 |
 | F30 | BOSS | 78% | ✅ 適正 |
-| F50 | BOSS | 92% | △ やや楽 |
-| F70+ | BOSS | 95%+ | △ 放置ゲームとして許容 |
+| F50 | BOSS | ~80% | ✅ 適正（v0.4.6調整済）|
+| F70+ | BOSS | ~80% | ✅ 適正（v0.4.6調整済）|
 
 ---
 
@@ -148,17 +151,16 @@ LS_KEY_BEST          = 'daemonrift_best'
 ファイル構成: index.html / style.css / script.js（3ファイル構成）
 公開URL: https://men0tai0ko.github.io/daemon-rift/
 
-【現在のバージョン】v0.4.5
+【現在のバージョン】v0.4.6
 
 【実装済みモジュール（script.js内ブロック順）】
 META / DATA / STATE / UTIL / ENGINE / SKILL / ITEM / SAVE / UI / AUDIO / ANIM / BATTLE / FUSION / G(コントローラ)
 
 【最優先タスク】
-F50以降の難易度上限調整（spawnEnemy のスケール係数またはボス倍率を調整）
+Android Chrome 実機動作確認
 
 【次の優先順位】
-1. F50以降の難易度上限調整（ISS-006）
-2. Android Chrome 実機動作確認
+1. Android Chrome 実機動作確認
 
 【重要な制約】
 - 3ファイル構成維持（index.html / style.css / script.js）。追加ファイル禁止
