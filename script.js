@@ -984,6 +984,7 @@ const BATTLE = {
     renderEnemyHP();
     setBattleLog(`${enemy.name} が立ちはだかる！`);
     document.getElementById('negotiate-panel').classList.remove('active');
+    document.getElementById('item-panel').classList.remove('active'); // アイテムパネルも初期化
     document.getElementById('battle-actions').style.display = '';
     AUDIO.playBgmBattle(enemy.isBoss);
     G.showScreen('screen-battle');
@@ -1132,6 +1133,51 @@ const BATTLE = {
     document.getElementById('go-fusions').textContent = STATE.fusions;
     G.showScreen('screen-gameover');
   },
+
+  // アイテムパネルを開く（使用可能アイテムを動的生成）
+  startItemPanel() {
+    // 問題4: 戦闘中以外（敵ターンのsetTimeout到達後など）は開かない
+    if (!STATE.inBattle) return;
+    // 戦闘中に使用可能なアイテム種別
+    const BATTLE_USABLE = ['回復薬', '万能薬', '守りの御札'];
+    const list = document.getElementById('item-panel-list');
+    list.innerHTML = '';
+    // 問題5: 使用可能アイテムが1件もない場合はパネルを開かずトーストのみ
+    const hasAny = BATTLE_USABLE.some(name => ITEM.count(name) > 0);
+    if (!hasAny) { showToast('使えるアイテムがない'); return; }
+    BATTLE_USABLE.forEach(name => {
+      const qty = ITEM.count(name);
+      const btn = document.createElement('button');
+      btn.className = `btn${qty <= 0 ? ' disabled' : ''}`;
+      const master = ITEM.MASTER[name];
+      btn.textContent = `${master.icon} ${name}（${qty}）`;
+      // 問題3: メソッド名を applyBattleItem に統一
+      if (qty > 0) btn.onclick = () => G.doBattleItem(name);
+      list.appendChild(btn);
+    });
+    document.getElementById('item-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  // アイテムパネルを閉じる
+  cancelItemPanel() {
+    document.getElementById('item-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  // 問題3: useItem → applyBattleItem にリネーム（UI._useItem との混在を解消）
+  // 戦闘中アイテム使用（ITEM.use() 経由・使用後に敵ターンを発生させる）
+  applyBattleItem(itemName) {
+    const result = ITEM.use(itemName);
+    if (!result.ok) { showToast(result.msg); return; }
+    setBattleLog(`🎒 ${result.msg}`);
+    saveGame();
+    renderPartyBar();
+    BATTLE.cancelItemPanel();
+    // 問題1: アイテム使用をターン消費とし敵の反撃を発生させる
+    // 問題2: 御札もここで敵ターンを呼ぶことでフラグ→即発動の流れになる
+    setTimeout(() => BATTLE._enemyAttack(), 600);
+  },
 };
 
 
@@ -1279,6 +1325,10 @@ const G={
   startNegotiate(){ BATTLE.startNegotiate(); },
   cancelNegotiate(){ BATTLE.cancelNegotiate(); },
   doNegotiate(tactic){ BATTLE.negotiate(tactic); },
+  // アイテムパネル委譲
+  startItemPanel(){ BATTLE.startItemPanel(); },
+  cancelItemPanel(){ BATTLE.cancelItemPanel(); },
+  doBattleItem(name){ BATTLE.applyBattleItem(name); },
 
 
 

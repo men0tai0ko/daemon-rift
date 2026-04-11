@@ -87,6 +87,12 @@
         <button class="btn"         onclick="G.cancelNegotiate()">✕ キャンセル</button>
       </div>
     </div>
+    <!-- アイテムパネル（negotiate-panelと同パターン） -->
+    <div class="negotiate-panel" id="item-panel">
+      <div class="negotiate-title">▌ アイテムを使う</div>
+      <div class="negotiate-opts" id="item-panel-list"></div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelItemPanel()">✕ キャンセル</button>
+    </div>
     <div class="battle-actions" id="battle-actions">
       <div class="action-row">
         <button class="btn primary" onclick="G.doAttack()">⚔ 攻撃</button>
@@ -95,6 +101,10 @@
       <div class="action-row">
         <button class="btn"          onclick="G.doFlee()">🏃 逃げる</button>
         <button class="btn disabled" onclick="G.doSkill()">✨ スキル</button>
+      </div>
+      <!-- アイテムボタン行を追加 -->
+      <div class="action-row">
+        <button class="btn" id="btn-battle-item" onclick="G.startItemPanel()">🎒 アイテム</button>
       </div>
     </div>
   </div>
