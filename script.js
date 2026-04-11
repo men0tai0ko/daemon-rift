@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.7';
+const APP_VERSION = '0.4.8';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -617,6 +617,13 @@ const UI = {
       el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty ? 'warn' : 'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
       content.appendChild(el);
     });
+    // ISS-012: 倉庫0体時に空表示を追加
+    if (!STATE.storage.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--muted);text-align:center;padding:16px;font-size:12px';
+      empty.textContent = '— 倉庫は空 —';
+      content.appendChild(empty);
+    }
   },
 
   // アイテム一覧画面を描画する
@@ -995,6 +1002,16 @@ const BATTLE = {
     document.getElementById('negotiate-panel').classList.remove('active');
     document.getElementById('item-panel').classList.remove('active'); // アイテムパネルも初期化
     document.getElementById('battle-actions').style.display = '';
+    // ISS-013: リード仲魔のスキル有無でスキルボタンの活性状態を制御
+    const lead = STATE.party.find(d => d.hp > 0);
+    const skillBtn = document.getElementById('btn-skill');
+    if (lead?.skills?.length) {
+      skillBtn.classList.remove('disabled');
+      skillBtn.disabled = false;
+    } else {
+      skillBtn.classList.add('disabled');
+      skillBtn.disabled = true;
+    }
     AUDIO.playBgmBattle(enemy.isBoss);
     G.showScreen('screen-battle');
   },
@@ -1060,7 +1077,13 @@ const BATTLE = {
     if (!lead || !e) return;
     if (tactic === '金で解決') {
       const cost = rand(10, 20 + e.lv * 3);
-      if (STATE.macca < cost) { showToast(`₪が足りない（必要: ${cost}）`); return; }
+      if (STATE.macca < cost) {
+        // ISS-010: 不足時はパネルを閉じて戦闘アクションに戻す
+        document.getElementById('negotiate-panel').classList.remove('active');
+        document.getElementById('battle-actions').style.display = '';
+        showToast(`₪が足りない（必要: ${cost}）`);
+        return;
+      }
       STATE.macca -= cost;
     }
     document.getElementById('negotiate-panel').classList.remove('active');
@@ -1082,6 +1105,7 @@ const BATTLE = {
       setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 1200);
     } else {
       setBattleLog(`${e.name}は激怒した！`);
+      saveGame(); // ISS-014: 交渉失敗時もマッカ減算をセーブ（金で解決失敗時の消失防止）
       setTimeout(() => BATTLE._enemyAttack(), 600);
     }
   },
@@ -1335,7 +1359,9 @@ const G={
       const auto=spawnEnemy(STATE.floor);
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
-      addLog(`${auto.name} を自動討伐（+${gain}₪）`);renderExplore();
+      addLog(`${auto.name} を自動討伐（+${gain}₪）`);
+      saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
+      renderExplore();
     }
   },
 

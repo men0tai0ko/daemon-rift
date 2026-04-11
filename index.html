@@ -1,8 +1,8 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.4.7
-  Updated : 2026-04-11
+  Version : 0.4.8
+  Updated : 2026-04-12
   Author  : ののやま
 ================================================================
   詳細な変更履歴は tasks.md を参照
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.4.7">
+<meta name="version" content="0.4.8">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -100,7 +100,7 @@
       </div>
       <div class="action-row">
         <button class="btn"          onclick="G.doFlee()">🏃 逃げる</button>
-        <button class="btn disabled" onclick="G.doSkill()">✨ スキル</button>
+        <button class="btn disabled" id="btn-skill" onclick="G.doSkill()">✨ スキル</button>
       </div>
       <!-- アイテムボタン行を追加 -->
       <div class="action-row">

@@ -9,12 +9,19 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.7
-**現在の状態:** リリース済み。ISS-005/007/008を実装。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.4.8
+**現在の状態:** リリース済み。ISS-010〜014（バグ修正・UX改善）を実装。次フェーズはISS-015〜018対応またはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.4.8（2026-04-12）
+- **ISS-010:** `negotiate()` マッカ不足時に交渉パネルを閉じて戦闘アクションへ復帰するよう修正
+- **ISS-011:** `_exploreStep()` 自動討伐分岐末尾に `saveGame()` を追加（kills/macca/drop消失防止）
+- **ISS-012:** `renderPartyScreen()` で倉庫0体時に「— 倉庫は空 —」を表示
+- **ISS-013:** `BATTLE.open()` でリード仲魔のスキル有無に応じてスキルボタンの `disabled` を制御。`index.html` に `id="btn-skill"` を付与
+- **ISS-014:** `negotiate()` 失敗分岐（激怒後）に `saveGame()` を追加（金で解決失敗時のマッカ減算消失防止）
 
 ### v0.4.7（2026-04-11）
 - **ISS-005 序盤ドロップ率補正:** `ITEM.tryDrop()` で F10未満に +5% 補正を追加
@@ -119,7 +126,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.4.7'   // script.js [BLOCK: META]
+APP_VERSION          = '0.4.8'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'
