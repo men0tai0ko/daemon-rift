@@ -9,12 +9,18 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.8
-**現在の状態:** リリース済み。ISS-010〜014（バグ修正・UX改善）を実装。次フェーズはISS-015〜018対応またはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.4.9
+**現在の状態:** リリース済み。ISS-015〜018（UX改善・バグ防止）を実装。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.4.9（2026-04-12）
+- **ISS-015:** `backToExplore()` に `renderExplore()` を追加し探索ボタン表示ズレを解消
+- **ISS-016:** 全滅確定時に `battle-actions` を即座に `display:none` にして連打による多重呼び出しを防止
+- **ISS-017:** ゲームオーバー画面の合体0件時を「0」→「－」表示に変更
+- **ISS-018:** `renderPartyScreen()` でパーティ満員時に倉庫悪魔のボタンへ `disabled` クラスを付与
 
 ### v0.4.8（2026-04-12）
 - **ISS-010:** `negotiate()` マッカ不足時に交渉パネルを閉じて戦闘アクションへ復帰するよう修正
@@ -126,7 +132,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.4.8'   // script.js [BLOCK: META]
+APP_VERSION          = '0.4.9'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

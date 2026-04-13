@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.8';
+const APP_VERSION = '0.4.9';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -610,11 +610,14 @@ const UI = {
     content.innerHTML = '';
     const all = [...STATE.party, ...STATE.storage];
     if (!all.length) { content.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px;font-size:13px">仲魔がいない</div>'; return; }
+    const partyFull = STATE.party.length >= 3; // ISS-018: パーティ満員フラグ
     all.forEach(d => {
       const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
       const el = document.createElement('div');
       el.className = `demon-card-full ${d.inParty ? 'in-party' : ''}`;
-      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty ? 'warn' : 'success'}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
+      // ISS-018: 倉庫悪魔かつパーティ満員時はボタンをdisabled化
+      const btnDisabled = !d.inParty && partyFull ? ' disabled' : '';
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div><button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
       content.appendChild(el);
     });
     // ISS-012: 倉庫0体時に空表示を追加
@@ -1126,7 +1129,11 @@ const BATTLE = {
     renderPartyBar();
     if (t.hp <= 0) {
       setBattleLog(`${t.name} は倒れた…`);
-      if (STATE.party.every(d => d.hp <= 0)) setTimeout(() => BATTLE._checkGameOver(), 1000);
+      if (STATE.party.every(d => d.hp <= 0)) {
+        // ISS-016: 全滅確定時にアクションボタンを即座に非表示にして連打を防止
+        document.getElementById('battle-actions').style.display = 'none';
+        setTimeout(() => BATTLE._checkGameOver(), 1000);
+      }
     }
   },
 
@@ -1169,7 +1176,7 @@ const BATTLE = {
     document.getElementById('go-floor').textContent   = `B${STATE.floor}F`;
     document.getElementById('go-best').textContent    = `B${STATE.bestFloor}F`;
     document.getElementById('go-kills').textContent   = STATE.kills;
-    document.getElementById('go-fusions').textContent = STATE.fusions;
+    document.getElementById('go-fusions').textContent = STATE.fusions > 0 ? STATE.fusions : '－'; // ISS-017: 0回は「－」表示
     // ISS-009: 次回引継額をリザルトに表示
     document.getElementById('go-legacy').textContent  = `₪ ${STATE.legacyMacca}`;
     G.showScreen('screen-gameover');
@@ -1307,7 +1314,7 @@ const G={
     if(id==='screen-fusion') UI.renderFusionScreen();
     if(id==='screen-party')  UI.switchPartyTab('party');
   },
-  backToExplore(){G.showScreen('screen-explore');},
+  backToExplore(){G.showScreen('screen-explore');renderExplore();},
 
   startNewGame(){
     clearInterval(STATE.exploreTimer);
