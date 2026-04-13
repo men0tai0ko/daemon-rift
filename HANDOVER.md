@@ -9,12 +9,21 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.4.9
-**現在の状態:** リリース済み。ISS-015〜018（UX改善・バグ防止）を実装。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.5.1
+**現在の状態:** リリース済み。ISS-021〜023（UX改善）を実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.5.1（2026-04-13）
+- **ISS-021:** `toggleExplore()` で仲魔不在（0体）と全滅（全員HP0）を別メッセージに分岐
+- **ISS-022:** `_enemyDefeated()` 昇階ログに `🆙` 絵文字を追加し視覚フィードバックを強化
+- **ISS-023:** `renderFusionScreen()` で合体不可・スロット未選択時に実行ボタンを `disabled` 化。`index.html` に `id="btn-fusion-exec"` を付与
+
+### v0.5.0（2026-04-13）
+- **ISS-019:** `BATTLE.flee()` 成功時の `setTimeout` 内に `saveGame()` を追加（逃走後の floorProgress 消失防止）
+- **ISS-020:** `BATTLE._enemyAttack()` 御札発動後に `saveGame()` を追加（`_guardActive` 消費確定をセーブ保証）
 
 ### v0.4.9（2026-04-12）
 - **ISS-015:** `backToExplore()` に `renderExplore()` を追加し探索ボタン表示ズレを解消
@@ -132,7 +141,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.4.9'   // script.js [BLOCK: META]
+APP_VERSION          = '0.5.1'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.4.9';
+const APP_VERSION = '0.5.1';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -585,13 +585,26 @@ const UI = {
     const preview = document.getElementById('fusion-preview');
     if (sA && sB) {
       const r = getFusionResult(sA, sB);
+      const execBtn = document.getElementById('btn-fusion-exec');
       if (r) {
         preview.classList.add('active');
         document.getElementById('fusion-result-emoji').textContent = r.emoji;
         document.getElementById('fusion-result-name').textContent = `${r.name} Lv${r.lv}`;
         document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}`;
-      } else { preview.classList.remove('active'); showToast('この組み合わせは合体できない'); }
-    } else { preview.classList.remove('active'); }
+        // ISS-023: 合体可能なら実行ボタンを活性化
+        execBtn.classList.remove('disabled'); execBtn.disabled = false;
+      } else {
+        preview.classList.remove('active');
+        showToast('この組み合わせは合体できない');
+        // ISS-023: 合体不可なら実行ボタンを非活性化
+        execBtn.classList.add('disabled'); execBtn.disabled = true;
+      }
+    } else {
+      preview.classList.remove('active');
+      // ISS-023: スロット未選択時も実行ボタンを非活性化
+      const execBtn = document.getElementById('btn-fusion-exec');
+      execBtn.classList.add('disabled'); execBtn.disabled = true;
+    }
     const list = document.getElementById('fusion-demon-list');
     list.innerHTML = '';
     [...STATE.party, ...STATE.storage].forEach(d => {
@@ -1057,7 +1070,11 @@ const BATTLE = {
       STATE.inBattle = false;
       AUDIO.seFlee();
       setBattleLog('うまく逃げ切った！');
-      setTimeout(() => { addLog('戦闘から逃げた', 'warn'); G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 800);
+      setTimeout(() => {
+        addLog('戦闘から逃げた', 'warn');
+        saveGame(); // ISS-019: 逃走後のfloorProgress・kills等をセーブ
+        G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore();
+      }, 800);
     } else {
       setBattleLog('逃げられなかった！');
       setTimeout(() => BATTLE._enemyAttack(), 600);
@@ -1120,6 +1137,7 @@ const BATTLE = {
     if (STATE._guardActive) {
       STATE._guardActive = false;
       setBattleLog(`${e.name}の攻撃を御札が防いだ！`);
+      saveGame(); // ISS-020: 御札消費（_guardActive=false）をセーブし次回ロード時の復活を防止
       renderPartyBar();
       return;
     }
@@ -1155,7 +1173,7 @@ const BATTLE = {
       STATE.floor++;
       STATE.floorProgress = 0;
       updateBestFloor();
-      addLog(`B${STATE.floor}Fへ進んだ`, 'system');
+      addLog(`🆙 B${STATE.floor}Fへ進んだ`, 'system'); // ISS-022: 昇階を絵文字で視覚強調
     }
     saveGame();
     STATE.inBattle = false;
@@ -1346,7 +1364,9 @@ const G={
   },
 
   toggleExplore(){
-    if(!STATE.party.length||STATE.party.every(d=>d.hp<=0)){showToast('仲魔がいない！');return;}
+    // ISS-021: 仲魔不在と全滅を別メッセージで区別
+    if(!STATE.party.length){showToast('仲魔がいない！');return;}
+    if(STATE.party.every(d=>d.hp<=0)){showToast('仲魔が全滅している！');return;}
     STATE.exploring=!STATE.exploring;
     if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore();}
     else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
