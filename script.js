@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -100,6 +100,8 @@ const AREAS = [
   {minFloor:1, name:"廃都表層"},{minFloor:11,name:"地下街区"},
   {minFloor:31,name:"冥界回廊"},{minFloor:61,name:"虚無の底"},
 ];
+// BUG-3修正: レベル上限（これを超えてレベルアップしない）
+const MAX_LEVEL = 100;
 
 // ================================================================
 // [BLOCK: STATE] ゲーム状態
@@ -205,8 +207,10 @@ function getFusionResult(a,b){
 }
 
 // レベルアップ処理（STATEの悪魔オブジェクトを直接更新する）
+// BUG-1修正: overflow = exp - expNext を保持。覚醒の書など直接呼び出し時は負になるためMath.max(0,…)で0保証
 function applyLevelUp(demon){
-  demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
+  const overflow=demon.exp-demon.expNext;
+  demon.lv++;demon.exp=Math.max(0,overflow);demon.expNext=demon.lv*20;
   demon.maxHp+=rand(5,10);demon.hp=demon.maxHp;
   demon.atk+=rand(1,2);demon.def+=rand(1,2);
 }
@@ -1162,8 +1166,11 @@ const BATTLE = {
     STATE.macca += mg;
     STATE.kills++;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
+      if (d.lv >= MAX_LEVEL) return;
       d.exp += eg;
-      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
+      // BUG-2修正: if→while で複数レベルアップに対応 / BUG-3: MAX_LEVELで上限保証
+      while (d.exp >= d.expNext && d.lv < MAX_LEVEL) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
+      if (d.lv >= MAX_LEVEL) { d.exp = 0; addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`, 'system'); }
     });
     setBattleLog(`${e.name}を倒した！ +${mg}₪`);
     playEnemyHitAnim();
@@ -1387,6 +1394,13 @@ const G={
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
       addLog(`${auto.name} を自動討伐（+${gain}₪）`);
+      // BUG-4修正: 自動討伐でも少量のEXPを付与（手動バトルの約1/3）
+      const autoExp=rand(1,Math.max(1,Math.floor((5+STATE.floor)*0.3)));
+      STATE.party.filter(d=>d.hp>0&&d.lv<MAX_LEVEL).forEach(d=>{
+        d.exp+=autoExp;
+        while(d.exp>=d.expNext&&d.lv<MAX_LEVEL){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
+        if(d.lv>=MAX_LEVEL){d.exp=0;addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`,'system');}
+      });
       saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
       renderExplore();
     }
