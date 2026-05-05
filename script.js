@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -763,20 +763,52 @@ const AUDIO = (() => {
       stopBgm();
       if (muted) return;
       const c = getCtx();
+
+      // 深度帯ごとにドローン音色・周波数・LFOを切り替える
+      const floor = STATE.floor || 1;
+      let drones, oscType, lfoRate, lfoDepth, gainVal;
+      if (floor >= 61) {
+        // 虚無の底: 超低音サイン波、極めてゆっくりなLFO
+        drones   = [27.5, 41.2, 55];   // A0, E1, A1
+        oscType  = 'sine';
+        lfoRate  = 0.05;
+        lfoDepth = 4;
+        gainVal  = 0.075;
+      } else if (floor >= 31) {
+        // 冥界回廊: 低音スクエア波、重厚なドローン
+        drones   = [36.7, 55, 73.4];   // D1, A1, D2
+        oscType  = 'square';
+        lfoRate  = 0.08;
+        lfoDepth = 3;
+        gainVal  = 0.07;
+      } else if (floor >= 11) {
+        // 地下街区: 中低音トライアングル波、やや不穏
+        drones   = [41.2, 61.7, 82.4]; // E1, B1, E2
+        oscType  = 'triangle';
+        lfoRate  = 0.11;
+        lfoDepth = 2.5;
+        gainVal  = 0.065;
+      } else {
+        // 廃都表層: のこぎり波ドローン（初期サウンド）
+        drones   = [55, 82.4, 110];    // A1, E2, A2
+        oscType  = 'sawtooth';
+        lfoRate  = 0.15;
+        lfoDepth = 2;
+        gainVal  = 0.06;
+      }
+
       bgmGain = c.createGain();
-      bgmGain.gain.value = 0.06;
+      bgmGain.gain.value = gainVal;
       bgmGain.connect(c.destination);
 
-      // 廃都の雰囲気：低音ドローン＋微かなメロディ
-      const drones = [55, 82.4, 110];  // A1, E2, A2
       bgmNode = drones.map(freq => {
         const osc = c.createOscillator();
         const lfo = c.createOscillator();
         const lfoGain = c.createGain();
-        lfo.frequency.value = 0.15 + Math.random() * 0.1;
-        lfoGain.gain.value = 2;
+        lfo.frequency.value = lfoRate + Math.random() * 0.05;
+        lfoGain.gain.value = lfoDepth;
         lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
-        osc.type = 'sawtooth';
+        osc.type = oscType;
         osc.frequency.value = freq;
         osc.connect(bgmGain);
         lfo.start(); osc.start();
