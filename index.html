@@ -81,11 +81,17 @@
     <div class="negotiate-panel" id="negotiate-panel">
       <div class="negotiate-title">▌ 交渉方法を選べ</div>
       <div class="negotiate-opts">
-        <button class="btn"         onclick="G.doNegotiate('おだてる')">😊 おだてる（成功率：中）</button>
-        <button class="btn warn"    onclick="G.doNegotiate('脅す')">😤 脅す（成功率：低）</button>
-        <button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（成功率：高）</button>
+        <button class="btn"         id="btn-neg-flatter"  onclick="G.doNegotiate('おだてる')">😊 おだてる（45%）</button>
+        <button class="btn warn"    id="btn-neg-threaten" onclick="G.doNegotiate('脅す')">😤 脅す（25%）</button>
+        <button class="btn success" id="btn-neg-money"    onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（65%）</button>
         <button class="btn"         onclick="G.cancelNegotiate()">✕ キャンセル</button>
       </div>
+    </div>
+    <!-- スキル選択パネル（2スキル保持時に表示） -->
+    <div class="negotiate-panel" id="skill-panel">
+      <div class="negotiate-title">▌ スキルを選べ</div>
+      <div class="negotiate-opts" id="skill-panel-list"></div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelSkillPanel()">✕ キャンセル</button>
     </div>
     <!-- アイテムパネル（negotiate-panelと同パターン） -->
     <div class="negotiate-panel" id="item-panel">

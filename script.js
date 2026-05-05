@@ -288,7 +288,7 @@ const SKILL = {
       const penalty = Math.floor(target.atk * 0.2);
       target._debuff = (target._debuff ?? 0) + penalty;
       target.atk = Math.max(1, target.atk - penalty);
-      return { dmg: 0, msg: `${attacker.name}の「${skillName}」！ ${target.name}弱体化（戦闘終了まで）`, effect: 'debuff' };
+      return { dmg: 0, msg: `${attacker.name}の「${skillName}」！ ${target.name}の ATK -${penalty}（戦闘終了まで）`, effect: 'debuff' };
     }
 
     if (s.type === 'special') {
@@ -1016,7 +1016,8 @@ const BATTLE = {
     renderEnemyHP();
     setBattleLog(`${enemy.name} が立ちはだかる！`);
     document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('item-panel').classList.remove('active'); // アイテムパネルも初期化
+    document.getElementById('skill-panel').classList.remove('active');
+    document.getElementById('item-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
     // ISS-013: リード仲魔のスキル有無でスキルボタンの活性状態を制御
     const lead = STATE.party.find(d => d.hp > 0);
@@ -1051,9 +1052,41 @@ const BATTLE = {
   },
 
   skill() {
+    const lead = STATE.party.find(d => d.hp > 0);
+    if (!lead || !lead.skills.length) return;
+    if (lead.skills.length >= 2) {
+      BATTLE.startSkillPanel();
+    } else {
+      BATTLE._activateSkill(lead.skills[0]);
+    }
+  },
+
+  startSkillPanel() {
+    const lead = STATE.party.find(d => d.hp > 0);
+    if (!lead) return;
+    const list = document.getElementById('skill-panel-list');
+    list.innerHTML = '';
+    lead.skills.forEach(skillName => {
+      const s = SKILL.MASTER[skillName];
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = `${skillName} ─ ${s?.desc ?? skillName}`;
+      btn.onclick = () => G.doSkillSelect(skillName);
+      list.appendChild(btn);
+    });
+    document.getElementById('skill-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  cancelSkillPanel() {
+    document.getElementById('skill-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  _activateSkill(skillName) {
     const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
-    if (!lead || !e || !lead.skills.length) return;
-    const result = SKILL.activate(lead, e, lead.skills[0]);
+    if (!lead || !e) return;
+    const result = SKILL.activate(lead, e, skillName);
     UI.setBattleLog(result.msg);
     AUDIO.seAttack();
     if (result.effect === 'weakness') { AUDIO.seWeakness(); ANIM.weaknessFlash(); }
@@ -1083,6 +1116,17 @@ const BATTLE = {
 
   startNegotiate() {
     if (STATE.currentEnemy?.isBoss) { showToast('ボスと交渉できない！'); return; }
+    const lead = STATE.party.find(d => d.hp > 0);
+    const enemyLv = STATE.currentEnemy?.lv ?? 1;
+    const lv = lead?.lv ?? 1;
+    [
+      ['おだてる',  '😊 おだてる',      'btn-neg-flatter'],
+      ['脅す',      '😤 脅す',           'btn-neg-threaten'],
+      ['金で解決',  '💰 マッカを渡す',   'btn-neg-money'],
+    ].forEach(([tactic, label, id]) => {
+      const pct = Math.round(calcNegotiateRate(lv, enemyLv, tactic) * 100);
+      document.getElementById(id).textContent = `${label}（${pct}%）`;
+    });
     document.getElementById('negotiate-panel').classList.add('active');
     document.getElementById('battle-actions').style.display = 'none';
   },
@@ -1350,6 +1394,10 @@ const G={
     addLog(`初期仲魔：${s.name} を連れている`,'success');
     // ISS-009: 引継ボーナスがある場合のみログに表示
     if (bonus > 0) addLog(`前回の記憶から ₪${bonus} を引き継いだ`, 'system');
+    // 初回プレイヒント（操作迷子防止）
+    setTimeout(() => addLog('【ヒント】▶ 探索開始 → 自動で進む。敵と遭遇したら手動で戦おう', 'system'), 800);
+    setTimeout(() => addLog('【ヒント】戦闘中「話す」で交渉に成功すると敵を仲魔にできる', 'system'), 2000);
+    setTimeout(() => addLog('【ヒント】倉庫に仲魔がいる。「合体」で2体を素材に強い悪魔を生み出そう', 'system'), 3500);
   },
 
   continueGame(){
@@ -1397,6 +1445,8 @@ const G={
   doAttack(){ BATTLE.attack(); },
 
   doSkill(){ BATTLE.skill(); },
+  doSkillSelect(skillName){ BATTLE.cancelSkillPanel(); BATTLE._activateSkill(skillName); },
+  cancelSkillPanel(){ BATTLE.cancelSkillPanel(); },
 
   doFlee(){ BATTLE.flee(); },
 
