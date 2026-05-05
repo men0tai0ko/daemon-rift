@@ -9,12 +9,27 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.5.1
-**現在の状態:** リリース済み。ISS-021〜023（UX改善）を実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.5.3
+**現在の状態:** リリース済み。ISS-028〜033（UX改善・バグ修正・新機能）を実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.5.3（2026-05-05）
+- **ISS-028:** `BATTLE.open()` で `enemy.spd > lead.spd` なら敵が先攻（SPD先攻判定実装）
+- **ISS-029:** `BATTLE.open()` バトルログに属性相性ヒント追加（弱点/耐性あり を表示）
+- **ISS-030:** `_enemyDefeated()` でボス撃破時に `AUDIO.seFloorUp()` 呼び出し追加
+- **ISS-031:** `BATTLE.startNegotiate()` が `calcNegotiateRate()` 結果を動的にボタンラベルへ反映。`index.html` 交渉ボタンに `id="btn-neg-praise/threat/pay"` 付与
+- **ISS-032:** `G.openShop()` / `G.buyShopItem()` 実装。`G.showScreen()` に `screen-shop` 分岐追加
+- **ISS-033:** `G.setExploreSpeed(spd)` 実装。`toggleExplore()` が `STATE.exploreSpeed` でインターバルを算出するよう修正
+- **その他:** 自動討伐ログに 10 種フレーバーテキスト追加。合体プレビューに「素材は消滅します」警告追加。エリア境界（B11/31/61F）到達時に専用ログ追加
+
+### v0.5.2（2026-05-04）
+- **ISS-024:** `applyLevelUp()` で余剰 EXP が消失するバグを修正
+- **ISS-025:** レベルアップチェックを `if` → `while` に変更し複数レベルアップ対応
+- **ISS-026:** 自動討伐でパーティに EXP が付与されない問題を修正
+- **ISS-027:** `MAX_LEVEL = 100` を追加しレベルキャップを実装
 
 ### v0.5.1（2026-04-13）
 - **ISS-021:** `toggleExplore()` で仲魔不在（0体）と全滅（全員HP0）を別メッセージに分岐
@@ -141,7 +156,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.5.1'   // script.js [BLOCK: META]
+APP_VERSION          = '0.5.3'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

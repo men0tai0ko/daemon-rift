@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.3';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -100,6 +100,17 @@ const AREAS = [
   {minFloor:1, name:"廃都表層"},{minFloor:11,name:"地下街区"},
   {minFloor:31,name:"冥界回廊"},{minFloor:61,name:"虚無の底"},
 ];
+// BUG-3修正: レベル上限（これを超えてレベルアップしない）
+const MAX_LEVEL = 100;
+
+// ショップ販売品（価格のみ定義。仕様はITEM.MASTERを参照）
+const SHOP_CATALOG = [
+  {name:'回復薬',    price: 50},
+  {name:'万能薬',    price:150},
+  {name:'守りの御札', price: 80},
+  {name:'覚醒の書',  price:200},
+  {name:'スキル石',  price:250},
+];
 
 // ================================================================
 // [BLOCK: STATE] ゲーム状態
@@ -127,6 +138,7 @@ const STATE = {
   fusionSlot:null, fusionA:null, fusionB:null,
   _skillStoneActive:false, _guardActive:false,
   _pendingBonus:0, // ISS-009: _checkGameOver()でのみセット・startNewGame()で消費（RUNTIME）
+  exploreSpeed:1,  // 探索速度倍率 (1/2/4)。セーブ対象外
 };
 
 // ================================================================
@@ -166,7 +178,9 @@ function createDemon(masterId,overrideLv=null){
 // フロアに応じた敵悪魔を生成する（isBoss=true でボス倍率を適用）
 function spawnEnemy(floor,isBoss=false){
   const pool=DEMON_MASTER.filter(d=>d.lv<=Math.ceil(floor/3)+2);
-  const base=pool[rand(0,pool.length-1)];
+  // F3未満では炎属性をプールから除外（氷スタート仲魔ピクシーへの一方的不利を防ぐ）
+  const safePool = floor < 3 ? pool.filter(d=>d.attr!=='炎') : pool;
+  const base=(safePool.length ? safePool : pool)[rand(0,(safePool.length||pool.length)-1)];
   const lv=clamp(rand(floor,floor+2),1,60);
   // 線形スケールは高フロアで指数爆発するため対数スケールに変更
   // ISS-006: F50以降の勝率過多を抑制するため、スケール計算用floorをF50でキャップ
@@ -205,8 +219,10 @@ function getFusionResult(a,b){
 }
 
 // レベルアップ処理（STATEの悪魔オブジェクトを直接更新する）
+// BUG-1修正: overflow = exp - expNext を保持。覚醒の書など直接呼び出し時は負になるためMath.max(0,…)で0保証
 function applyLevelUp(demon){
-  demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
+  const overflow=demon.exp-demon.expNext;
+  demon.lv++;demon.exp=Math.max(0,overflow);demon.expNext=demon.lv*20;
   demon.maxHp+=rand(5,10);demon.hp=demon.maxHp;
   demon.atk+=rand(1,2);demon.def+=rand(1,2);
 }
@@ -214,7 +230,7 @@ function applyLevelUp(demon){
 // ISS-009: 次回引継マッカを計算する純粋関数（副作用なし）
 // 計算式: floor(log1p(bestFloor) × 80)、上限 500₪
 function calcLegacyBonus(bestFloor){
-  return Math.min(500, Math.floor(Math.log1p(bestFloor) * 80));
+  return Math.min(1500, Math.floor(Math.log1p(bestFloor) * 200));
 }
 
 
@@ -533,6 +549,17 @@ const UI = {
       }
       list.appendChild(card);
     }
+    // 倉庫バッジ更新
+    const badge = document.getElementById('storage-badge');
+    if (badge) {
+      if (STATE.storage.length > 0) {
+        badge.textContent = `倉庫 ${STATE.storage.length}体`;
+        badge.style.display = '';
+        badge.onclick = () => G.showScreen('screen-party');
+      } else {
+        badge.style.display = 'none';
+      }
+    }
   },
 
   // 戦闘画面の敵HPバーを更新する
@@ -591,16 +618,19 @@ const UI = {
         document.getElementById('fusion-result-emoji').textContent = r.emoji;
         document.getElementById('fusion-result-name').textContent = `${r.name} Lv${r.lv}`;
         document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}`;
+        document.getElementById('fusion-result-warn').textContent = '⚠ 合体すると素材の仲魔は消滅します';
         // ISS-023: 合体可能なら実行ボタンを活性化
         execBtn.classList.remove('disabled'); execBtn.disabled = false;
       } else {
         preview.classList.remove('active');
+        document.getElementById('fusion-result-warn').textContent = '';
         showToast('この組み合わせは合体できない');
         // ISS-023: 合体不可なら実行ボタンを非活性化
         execBtn.classList.add('disabled'); execBtn.disabled = true;
       }
     } else {
       preview.classList.remove('active');
+      document.getElementById('fusion-result-warn').textContent = '';
       // ISS-023: スロット未選択時も実行ボタンを非活性化
       const execBtn = document.getElementById('btn-fusion-exec');
       execBtn.classList.add('disabled'); execBtn.disabled = true;
@@ -691,6 +721,26 @@ const UI = {
       tabItem.classList.add('active');
       UI.renderItemScreen();
     }
+  },
+
+  // ショップ画面を描画する
+  renderShopScreen() {
+    document.getElementById('shop-macca-display').textContent = STATE.macca;
+    const content = document.getElementById('shop-content');
+    content.innerHTML = '';
+    SHOP_CATALOG.forEach(({name, price}) => {
+      const master = ITEM.MASTER[name];
+      if (!master) return;
+      const qty = ITEM.count(name);
+      const maxReached = qty >= master.maxStack;
+      const canAfford = STATE.macca >= price;
+      const el = document.createElement('div');
+      el.className = 'shop-item';
+      const btnDisabled = (maxReached || !canAfford) ? ' disabled' : '';
+      const btnLabel = maxReached ? '上限' : `${price}₪`;
+      el.innerHTML = `<div class="shop-item-icon">${master.icon}</div><div class="shop-item-info"><div class="shop-item-name">${name}</div><div class="shop-item-desc">${master.desc}</div><div class="shop-item-qty">所持 ${qty} / ${master.maxStack}</div></div><button class="btn success action-btn${btnDisabled}" onclick="G.buyShopItem('${name}',${price})">${btnLabel}</button>`;
+      content.appendChild(el);
+    });
   },
 };
 
@@ -1014,12 +1064,18 @@ const BATTLE = {
     at.textContent = enemy.attr;
     at.className = `tag attr-${enemy.attr}`;
     renderEnemyHP();
-    setBattleLog(`${enemy.name} が立ちはだかる！`);
+    const lead = STATE.party.find(d => d.hp > 0);
+    let openMsg = `${enemy.name} が立ちはだかる！`;
+    if (lead) {
+      const aff = AFFINITY[lead.attr]?.[enemy.attr] ?? 1;
+      if (aff >= 2) openMsg += ` ▶ ${enemy.attr}属性（${lead.attr}が弱点！）`;
+      else if (aff <= 0.5) openMsg += ` ▶ ${enemy.attr}属性（${lead.attr}は耐性あり）`;
+    }
+    setBattleLog(openMsg);
     document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('item-panel').classList.remove('active'); // アイテムパネルも初期化
+    document.getElementById('item-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
     // ISS-013: リード仲魔のスキル有無でスキルボタンの活性状態を制御
-    const lead = STATE.party.find(d => d.hp > 0);
     const skillBtn = document.getElementById('btn-skill');
     if (lead?.skills?.length) {
       skillBtn.classList.remove('disabled');
@@ -1027,6 +1083,16 @@ const BATTLE = {
     } else {
       skillBtn.classList.add('disabled');
       skillBtn.disabled = true;
+    }
+    // SPD先攻判定: 敵SPDがリード仲魔SPDを上回る場合は敵が先攻
+    STATE._enemyFirst = lead && enemy.spd > lead.spd;
+    if (STATE._enemyFirst) {
+      setBattleLog(`${enemy.name} が立ちはだかる！ ─ 先手を取られた！`);
+      document.getElementById('battle-actions').style.display = 'none';
+      setTimeout(() => {
+        document.getElementById('battle-actions').style.display = '';
+        BATTLE._enemyAttack();
+      }, 800);
     }
     AUDIO.playBgmBattle(enemy.isBoss);
     G.showScreen('screen-battle');
@@ -1083,6 +1149,26 @@ const BATTLE = {
 
   startNegotiate() {
     if (STATE.currentEnemy?.isBoss) { showToast('ボスと交渉できない！'); return; }
+    // 実際の成功率をボタンラベルに反映
+    const lead = STATE.party.find(d => d.hp > 0);
+    const e = STATE.currentEnemy;
+    if (lead && e) {
+      const tactics = [
+        {key:'おだてる', emoji:'😊', el:'btn-neg-praise'},
+        {key:'脅す',     emoji:'😤', el:'btn-neg-threat'},
+        {key:'金で解決', emoji:'💰', el:'btn-neg-pay'},
+      ];
+      tactics.forEach(({key, emoji, el}) => {
+        const rate = Math.round(calcNegotiateRate(lead.lv, e.lv, key) * 100);
+        const btn = document.getElementById(el);
+        if (btn) btn.textContent = `${emoji} ${key}（${rate}%）`;
+      });
+      // 難易度ヒント
+      const diff = lead.lv - e.lv;
+      const hint = diff >= 5 ? '💡 Lvが高く交渉しやすい' : diff >= 0 ? '💡 互角程度' : '💡 相手のLvが高く難しい';
+      const hintEl = document.getElementById('negotiate-hint');
+      if (hintEl) hintEl.textContent = hint;
+    }
     document.getElementById('negotiate-panel').classList.add('active');
     document.getElementById('battle-actions').style.display = 'none';
   },
@@ -1162,18 +1248,25 @@ const BATTLE = {
     STATE.macca += mg;
     STATE.kills++;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
+      if (d.lv >= MAX_LEVEL) return;
       d.exp += eg;
-      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
+      // BUG-2修正: if→while で複数レベルアップに対応 / BUG-3: MAX_LEVELで上限保証
+      while (d.exp >= d.expNext && d.lv < MAX_LEVEL) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
+      if (d.lv >= MAX_LEVEL) { d.exp = 0; addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`, 'system'); }
     });
     setBattleLog(`${e.name}を倒した！ +${mg}₪`);
     playEnemyHitAnim();
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
     STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
     if (STATE.floorProgress >= 5 || e.isBoss) {
+      if (e.isBoss) AUDIO.seFloorUp();
       STATE.floor++;
       STATE.floorProgress = 0;
       updateBestFloor();
       addLog(`🆙 B${STATE.floor}Fへ進んだ`, 'system'); // ISS-022: 昇階を絵文字で視覚強調
+      if (STATE.floor === 11) addLog('── 廃都中層へ踏み込んだ。魔の気配が濃くなる…', 'system');
+      else if (STATE.floor === 31) addLog('── 廃都深層。ここより先は死地だ', 'system');
+      else if (STATE.floor === 61) addLog('── 最深部。世界の果てに踏み込んだ…', 'system');
     }
     saveGame();
     STATE.inBattle = false;
@@ -1331,6 +1424,7 @@ const G={
     document.getElementById(id).classList.add('active');
     if(id==='screen-fusion') UI.renderFusionScreen();
     if(id==='screen-party')  UI.switchPartyTab('party');
+    if(id==='screen-shop')   UI.renderShopScreen();
   },
   backToExplore(){G.showScreen('screen-explore');renderExplore();},
 
@@ -1368,9 +1462,37 @@ const G={
     if(!STATE.party.length){showToast('仲魔がいない！');return;}
     if(STATE.party.every(d=>d.hp<=0)){showToast('仲魔が全滅している！');return;}
     STATE.exploring=!STATE.exploring;
-    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore();}
-    else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
+    if(STATE.exploring){
+      const interval=Math.round(2000/STATE.exploreSpeed);
+      STATE.exploreTimer=setInterval(G._exploreStep,interval);
+      addLog('探索を開始した…','system');AUDIO.playBgmExplore();
+    }else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
     renderExplore();
+  },
+
+  setExploreSpeed(spd){
+    STATE.exploreSpeed=spd;
+    [1,2,4].forEach(s=>{
+      const btn=document.getElementById(`speed-x${s}`);
+      if(btn){btn.classList.toggle('active',s===spd);}
+    });
+    if(STATE.exploring){
+      clearInterval(STATE.exploreTimer);
+      STATE.exploreTimer=setInterval(G._exploreStep,Math.round(2000/spd));
+    }
+  },
+
+  openShop(){G.showScreen('screen-shop');},
+
+  buyShopItem(name,price){
+    if(STATE.macca<price){showToast('マッカが足りない！');return;}
+    const ok=ITEM.add(name);
+    if(!ok){showToast('所持上限に達している');return;}
+    STATE.macca-=price;
+    showToast(`${name} を購入した`);
+    saveGame();
+    UI.renderShopScreen();
+    document.getElementById('shop-macca-display').textContent=STATE.macca;
   },
 
   _exploreStep(){
@@ -1386,7 +1508,26 @@ const G={
       const auto=spawnEnemy(STATE.floor);
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
-      addLog(`${auto.name} を自動討伐（+${gain}₪）`);
+      const autoFlavor=[
+        `${auto.name} を一閃！（+${gain}₪）`,
+        `${auto.name} を蹴散らした（+${gain}₪）`,
+        `${auto.name} が現れたが返り討ちに（+${gain}₪）`,
+        `${auto.name} に奇襲——即座に制圧（+${gain}₪）`,
+        `${auto.name} を難なく倒した（+${gain}₪）`,
+        `${auto.name} が抵抗したが無駄だった（+${gain}₪）`,
+        `${auto.name} を撃破、先へ進む（+${gain}₪）`,
+        `${auto.name} の叫び声が響いた（+${gain}₪）`,
+        `${auto.name} を圧倒した（+${gain}₪）`,
+        `${auto.name} が塵となった（+${gain}₪）`,
+      ];
+      addLog(autoFlavor[rand(0,autoFlavor.length-1)]);
+      // BUG-4修正: 自動討伐でも少量のEXPを付与（手動バトルの約1/3）
+      const autoExp=rand(1,Math.max(1,Math.floor((5+STATE.floor)*0.3)));
+      STATE.party.filter(d=>d.hp>0&&d.lv<MAX_LEVEL).forEach(d=>{
+        d.exp+=autoExp;
+        while(d.exp>=d.expNext&&d.lv<MAX_LEVEL){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
+        if(d.lv>=MAX_LEVEL){d.exp=0;addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`,'system');}
+      });
       saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
       renderExplore();
     }

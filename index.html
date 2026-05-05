@@ -1,8 +1,8 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.5.1
-  Updated : 2026-04-13
+  Version : 0.5.3
+  Updated : 2026-05-05
   Author  : ののやま
 ================================================================
   詳細な変更履歴は tasks.md を参照
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.5.1">
+<meta name="version" content="0.5.3">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -43,6 +43,7 @@
         <button class="btn" id="btn-mute" onclick="AUDIO.toggleMute();this.textContent=AUDIO.isMuted?'🔇':'🔊'" style="padding:8px 10px;font-size:11px;">🔊</button>
         <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-party')">仲魔</button>
         <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.showScreen('screen-fusion')">合体</button>
+        <button class="btn" style="padding:8px 10px;font-size:11px;" onclick="G.openShop()">🏪</button>
       </div>
     </div>
     <div class="progress-wrap">
@@ -51,12 +52,21 @@
     </div>
     <div class="explore-log" id="explore-log"><div class="log-entry system">— 探索を開始する —</div></div>
     <div class="party-bar">
-      <div class="party-label">PARTY</div>
+      <div class="party-bar-header">
+        <div class="party-label">PARTY</div>
+        <div class="storage-badge" id="storage-badge" style="display:none"></div>
+      </div>
       <div class="party-list" id="party-list"></div>
     </div>
     <div class="explore-controls">
       <button class="btn primary" id="btn-explore-toggle" onclick="G.toggleExplore()">▶ 探索開始</button>
       <button class="btn warn" onclick="G.showScreen('screen-fusion')">⚗ 合体</button>
+    </div>
+    <div class="speed-controls">
+      <span class="speed-label">速度</span>
+      <button class="btn speed-btn active" id="speed-x1" onclick="G.setExploreSpeed(1)">×1</button>
+      <button class="btn speed-btn" id="speed-x2" onclick="G.setExploreSpeed(2)">×2</button>
+      <button class="btn speed-btn" id="speed-x4" onclick="G.setExploreSpeed(4)">×4</button>
     </div>
   </div>
 
@@ -80,10 +90,11 @@
     <div class="battle-log-area"><div class="battle-log-text" id="battle-log">...</div></div>
     <div class="negotiate-panel" id="negotiate-panel">
       <div class="negotiate-title">▌ 交渉方法を選べ</div>
+      <div class="negotiate-hint" id="negotiate-hint"></div>
       <div class="negotiate-opts">
-        <button class="btn"         onclick="G.doNegotiate('おだてる')">😊 おだてる（成功率：中）</button>
-        <button class="btn warn"    onclick="G.doNegotiate('脅す')">😤 脅す（成功率：低）</button>
-        <button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（成功率：高）</button>
+        <button class="btn"         id="btn-neg-praise" onclick="G.doNegotiate('おだてる')">😊 おだてる（成功率：中）</button>
+        <button class="btn warn"    id="btn-neg-threat" onclick="G.doNegotiate('脅す')">😤 脅す（成功率：低）</button>
+        <button class="btn success" id="btn-neg-pay"    onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（成功率：高）</button>
         <button class="btn"         onclick="G.cancelNegotiate()">✕ キャンセル</button>
       </div>
     </div>
@@ -133,6 +144,7 @@
         <div class="fusion-result-emoji" id="fusion-result-emoji">?</div>
         <div class="fusion-result-name"  id="fusion-result-name">???</div>
         <div class="fusion-result-skill" id="fusion-result-skill"></div>
+        <div class="fusion-result-warn" id="fusion-result-warn" style="font-size:11px;color:var(--warn);margin-top:6px;"></div>
         <button class="btn primary" id="btn-fusion-exec" style="margin-top:12px;width:100%;" onclick="G.executeFusion()">⚡ 合体実行</button>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:1px;">▌ 仲魔一覧（タップで素材選択）</div>
@@ -151,6 +163,15 @@
     </div>
     <div class="party-screen-content" id="party-screen-content"></div>
     <div class="party-screen-content" id="party-item-content" style="display:none"></div>
+  </div>
+
+  <div id="screen-shop" class="screen">
+    <div class="shop-header">
+      <button class="btn" style="padding:8px 12px;font-size:12px;" onclick="G.backToExplore()">← 戻る</button>
+      <span class="shop-header-title">🏪 ショップ</span>
+      <span class="shop-macca">₪ <span id="shop-macca-display">0</span></span>
+    </div>
+    <div class="shop-content" id="shop-content"></div>
   </div>
 
   <div id="screen-gameover" class="screen">
