@@ -9,12 +9,18 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.5.1
-**現在の状態:** リリース済み。ISS-021〜023（UX改善）を実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.6.0
+**現在の状態:** リリース済み。バグ修正2件・スキル選択パネル・深度帯BGMを実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.6.0（2026-05-06）
+- **バグ修正:** `startNewGame()` の `Object.assign` に `_skillStoneActive:false, _guardActive:false` を追加。ゲームオーバー時にフラグが残存したまま新ゲームが始まるバグを修正
+- **バグ修正:** `continueGame()` で全滅パーティのセーブをロードした際の詰み問題を修正。`_pendingBonus` をセットしてゲームオーバー画面へ誘導する分岐を追加
+- **機能追加:** スキル選択パネル実装。`BATTLE.startSkillPanel()` / `cancelSkillPanel()` / `_executeSkill(skillName)` を追加。`skill()` を改修し、1スキル時は直接発動・2スキル以上でパネルを表示。`index.html` に `id="skill-panel"` を付与
+- **機能追加:** 深度帯ごとの探索BGM切り替え。`playBgmExplore(floor)` に floor 引数追加（デフォルト=1）。廃都表層/地下街区/冥界回廊/虚無の底 の4段階でドローン周波数・音量・LFOレートが変化。全 `playBgmExplore()` 呼び出しに `STATE.floor` を渡すよう更新
 
 ### v0.5.1（2026-04-13）
 - **ISS-021:** `toggleExplore()` で仲魔不在（0体）と全滅（全員HP0）を別メッセージに分岐
@@ -141,7 +147,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.5.1'   // script.js [BLOCK: META]
+APP_VERSION          = '0.6.0'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

@@ -1,8 +1,8 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.5.1
-  Updated : 2026-04-13
+  Version : 0.6.0
+  Updated : 2026-05-06
   Author  : ののやま
 ================================================================
   詳細な変更履歴は tasks.md を参照
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.5.1">
+<meta name="version" content="0.6.0">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -92,6 +92,12 @@
       <div class="negotiate-title">▌ アイテムを使う</div>
       <div class="negotiate-opts" id="item-panel-list"></div>
       <button class="btn" style="margin-top:4px;" onclick="G.cancelItemPanel()">✕ キャンセル</button>
+    </div>
+    <!-- スキル選択パネル（2スキル以上の仲魔でスキルボタン押下時に表示） -->
+    <div class="negotiate-panel" id="skill-panel">
+      <div class="negotiate-title">▌ スキルを選べ</div>
+      <div class="negotiate-opts" id="skill-panel-list"></div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelSkillPanel()">✕ キャンセル</button>
     </div>
     <div class="battle-actions" id="battle-actions">
       <div class="action-row">

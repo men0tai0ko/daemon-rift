@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.6.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -754,26 +754,41 @@ const AUDIO = (() => {
       muted = !muted;
       localStorage.setItem('daemonrift_mute', muted ? '1' : '0');
       if (muted) stopBgm();
-      else AUDIO.playBgmExplore();
+      else AUDIO.playBgmExplore(STATE.floor);
       return muted;
     },
 
     // --- BGM ---
-    playBgmExplore() {
+    // 深度帯ごとに異なるドローンBGMを再生（将来検討タスク: 深度帯ごとのBGM切り替え）
+    playBgmExplore(floor = 1) {
       stopBgm();
       if (muted) return;
       const c = getCtx();
       bgmGain = c.createGain();
-      bgmGain.gain.value = 0.06;
       bgmGain.connect(c.destination);
 
-      // 廃都の雰囲気：低音ドローン＋微かなメロディ
-      const drones = [55, 82.4, 110];  // A1, E2, A2
+      // 深度帯に応じてドローン周波数・音量・LFOレートを変化させる
+      let drones, gainVal, lfoRate;
+      if (floor >= 61) {
+        // 虚無の底: 最も重く圧迫的
+        drones = [41.2, 55, 65.4];  gainVal = 0.08; lfoRate = 0.28;
+      } else if (floor >= 31) {
+        // 冥界回廊: 暗く不穏
+        drones = [46.2, 61.7, 92.5]; gainVal = 0.07; lfoRate = 0.22;
+      } else if (floor >= 11) {
+        // 地下街区: やや緊張感
+        drones = [49, 73.4, 110];   gainVal = 0.065; lfoRate = 0.18;
+      } else {
+        // 廃都表層: 静かで不気味（デフォルト）
+        drones = [55, 82.4, 110];   gainVal = 0.06;  lfoRate = 0.15;
+      }
+      bgmGain.gain.value = gainVal;
+
       bgmNode = drones.map(freq => {
         const osc = c.createOscillator();
         const lfo = c.createOscillator();
         const lfoGain = c.createGain();
-        lfo.frequency.value = 0.15 + Math.random() * 0.1;
+        lfo.frequency.value = lfoRate + Math.random() * 0.1;
         lfoGain.gain.value = 2;
         lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
         osc.type = 'sawtooth';
@@ -1016,7 +1031,8 @@ const BATTLE = {
     renderEnemyHP();
     setBattleLog(`${enemy.name} が立ちはだかる！`);
     document.getElementById('negotiate-panel').classList.remove('active');
-    document.getElementById('item-panel').classList.remove('active'); // アイテムパネルも初期化
+    document.getElementById('item-panel').classList.remove('active');
+    document.getElementById('skill-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
     // ISS-013: リード仲魔のスキル有無でスキルボタンの活性状態を制御
     const lead = STATE.party.find(d => d.hp > 0);
@@ -1051,9 +1067,47 @@ const BATTLE = {
   },
 
   skill() {
+    const lead = STATE.party.find(d => d.hp > 0);
+    if (!lead || !STATE.currentEnemy || !lead.skills.length) return;
+    if (lead.skills.length === 1) {
+      BATTLE._executeSkill(lead.skills[0]);
+    } else {
+      BATTLE.startSkillPanel();
+    }
+  },
+
+  // スキル選択パネルを開く（2スキル以上の仲魔用）
+  startSkillPanel() {
+    if (!STATE.inBattle) return;
+    const lead = STATE.party.find(d => d.hp > 0);
+    if (!lead) return;
+    const list = document.getElementById('skill-panel-list');
+    list.innerHTML = '';
+    lead.skills.forEach(skillName => {
+      const s = SKILL.MASTER[skillName];
+      const typeLabel = {attack:'攻撃',heal:'回復',debuff:'弱体',special:'特殊'}[s?.type] ?? '';
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}）`;
+      btn.onclick = () => G.doSkillSelect(skillName);
+      list.appendChild(btn);
+    });
+    document.getElementById('skill-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  cancelSkillPanel() {
+    document.getElementById('skill-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  // 指定スキルを実行する（1スキル直接使用 / パネル選択の両経路から呼ばれる）
+  _executeSkill(skillName) {
     const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
-    if (!lead || !e || !lead.skills.length) return;
-    const result = SKILL.activate(lead, e, lead.skills[0]);
+    if (!lead || !e) return;
+    document.getElementById('skill-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+    const result = SKILL.activate(lead, e, skillName);
     UI.setBattleLog(result.msg);
     AUDIO.seAttack();
     if (result.effect === 'weakness') { AUDIO.seWeakness(); ANIM.weaknessFlash(); }
@@ -1073,7 +1127,7 @@ const BATTLE = {
       setTimeout(() => {
         addLog('戦闘から逃げた', 'warn');
         saveGame(); // ISS-019: 逃走後のfloorProgress・kills等をセーブ
-        G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore();
+        G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor);
       }, 800);
     } else {
       setBattleLog('逃げられなかった！');
@@ -1122,7 +1176,7 @@ const BATTLE = {
       STATE.inBattle = false;
       STATE.floorProgress = Math.max(0, STATE.floorProgress - 1);
       saveGame();
-      setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 1200);
+      setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor); }, 1200);
     } else {
       setBattleLog(`${e.name}は激怒した！`);
       saveGame(); // ISS-014: 交渉失敗時もマッカ減算をセーブ（金で解決失敗時の消失防止）
@@ -1177,7 +1231,7 @@ const BATTLE = {
     }
     saveGame();
     STATE.inBattle = false;
-    setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(); }, 1200);
+    setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor); }, 1200);
   },
 
   _checkGameOver() {
@@ -1340,7 +1394,8 @@ const G={
     const bonus = STATE._pendingBonus;
     Object.assign(STATE,{floor:1,macca:100,kills:0,fusions:0,bestFloor:1,
       floorProgress:0,exploring:false,exploreTimer:null,
-      party:[],storage:[],fusionA:null,fusionB:null,items:{},legacyMacca:0,_pendingBonus:0});
+      party:[],storage:[],fusionA:null,fusionB:null,items:{},legacyMacca:0,_pendingBonus:0,
+      _skillStoneActive:false,_guardActive:false});
     // ISS-009: 引継マッカを初期マッカに加算
     STATE.macca += bonus;
     const s=createDemon(1,1);s.inParty=true;
@@ -1359,6 +1414,17 @@ const G={
     // ISS-007: ロードデータにitemsが存在しない場合の安全フォールバック
     if(!STATE.items) STATE.items={};
     STATE.exploring=false;
+    // 全滅セーブのロード時はゲームオーバー画面へ誘導（探索画面に閉じ込め防止）
+    if(STATE.party.length>0 && STATE.party.every(d=>d.hp<=0)){
+      STATE._pendingBonus=STATE.legacyMacca;
+      document.getElementById('go-floor').textContent   =`B${STATE.floor}F`;
+      document.getElementById('go-best').textContent    =`B${STATE.bestFloor}F`;
+      document.getElementById('go-kills').textContent   =STATE.kills;
+      document.getElementById('go-fusions').textContent =STATE.fusions>0?STATE.fusions:'－';
+      document.getElementById('go-legacy').textContent  =`₪ ${STATE.legacyMacca}`;
+      G.showScreen('screen-gameover');
+      return;
+    }
     G.showScreen('screen-explore');renderExplore();
     addLog('探索を再開した…','system');
   },
@@ -1368,7 +1434,7 @@ const G={
     if(!STATE.party.length){showToast('仲魔がいない！');return;}
     if(STATE.party.every(d=>d.hp<=0)){showToast('仲魔が全滅している！');return;}
     STATE.exploring=!STATE.exploring;
-    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore();}
+    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore(STATE.floor);}
     else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
     renderExplore();
   },
@@ -1407,6 +1473,10 @@ const G={
   startItemPanel(){ BATTLE.startItemPanel(); },
   cancelItemPanel(){ BATTLE.cancelItemPanel(); },
   doBattleItem(name){ BATTLE.applyBattleItem(name); },
+  // スキルパネル委譲
+  startSkillPanel(){ BATTLE.startSkillPanel(); },
+  cancelSkillPanel(){ BATTLE.cancelSkillPanel(); },
+  doSkillSelect(skillName){ BATTLE._executeSkill(skillName); },
 
 
 
