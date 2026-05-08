@@ -169,3 +169,29 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
   60%     { transform:translateX(-4px); }
   80%     { transform:translateX(4px); }
 }
+
+/* ---- 探索演出アニメーション ---- */
+/* フロア到達ポップ */
+@keyframes floor-pop {
+  0%   { transform:scale(1);    color:var(--cyan); }
+  35%  { transform:scale(1.38); color:var(--gold); text-shadow:0 0 16px var(--gold),0 0 30px rgba(241,196,15,.5); }
+  100% { transform:scale(1);    color:var(--cyan); }
+}
+.floor-pop { animation:floor-pop 0.75s ease forwards; display:inline-block; }
+
+/* プログレスバー危険状態（4/5以上） */
+@keyframes progress-danger {
+  0%,100% { box-shadow:none; }
+  50%     { box-shadow:0 0 10px var(--orange),inset 0 0 5px rgba(230,126,34,.25); }
+}
+.progress-bar.danger {
+  background:linear-gradient(90deg,var(--red),var(--orange));
+  animation:progress-danger 0.55s ease infinite;
+}
+
+/* 瀕死HPパルス */
+@keyframes hp-pulse {
+  0%,100% { background:var(--red); }
+  50%     { background:#ff5252; box-shadow:0 0 6px rgba(192,57,43,.8); }
+}
+.hp-bar.critical { animation:hp-pulse 0.85s ease infinite; }

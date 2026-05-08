@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.7.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -508,7 +508,9 @@ const UI = {
   renderExplore() {
     document.getElementById('floor-display').textContent = `B${STATE.floor}F`;
     document.getElementById('macca-display').textContent = STATE.macca;
-    document.getElementById('progress-bar').style.width = `${(STATE.floorProgress / 5) * 100}%`;
+    const pb = document.getElementById('progress-bar');
+    pb.style.width = `${(STATE.floorProgress / 5) * 100}%`;
+    pb.classList.toggle('danger', STATE.floorProgress >= 4 && STATE.floor % 10 !== 0);
     document.getElementById('progress-label-num').textContent = `${STATE.floorProgress} / 5`;
     document.getElementById('progress-label-text').textContent = STATE.floor % 10 === 0 ? '⚠ ボスフロア' : 'フロア進行';
     document.getElementById('btn-explore-toggle').textContent = STATE.exploring ? '⏸ 探索停止' : '▶ 探索開始';
@@ -997,6 +999,49 @@ const ANIM = {
     app.style.animation = 'shake 0.5s ease';
     setTimeout(() => { app.style.animation = ''; }, 600);
   },
+
+  // 探索：フロア到達ポップ（floor-display にスケール+ゴールドglow）
+  floorUp() {
+    const el = document.getElementById('floor-display');
+    el.classList.remove('floor-pop'); void el.offsetWidth;
+    el.classList.add('floor-pop');
+    setTimeout(() => el.classList.remove('floor-pop'), 800);
+  },
+
+  // 探索：エンカウント直前フラッシュ（探索画面上に一瞬オーバーレイ）
+  encounterAlert(isBoss) {
+    const color = isBoss ? 'rgba(241,196,15,.32)' : 'rgba(192,57,43,.24)';
+    const el = document.createElement('div');
+    el.style.cssText = `position:fixed;inset:0;background:${color};pointer-events:none;z-index:997;transition:opacity 0.55s ease;`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => {
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 650);
+    });
+  },
+
+  // 探索：エリア遷移バナー（廃都表層→地下街区 など）
+  areaBanner(areaName) {
+    const el = document.createElement('div');
+    el.textContent = `— ${areaName} —`;
+    el.style.cssText = `
+      position:fixed;top:42%;left:50%;transform:translateX(-50%);
+      background:rgba(10,10,15,.93);border:1px solid var(--purple);
+      color:var(--purple);font-size:16px;font-weight:bold;letter-spacing:5px;
+      padding:13px 30px;border-radius:4px;z-index:1000;pointer-events:none;
+      animation:bannerPop 1.8s ease forwards;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1900);
+  },
+
+  // 探索：自動討伐時にログエリアを微フラッシュ
+  logFlash() {
+    const el = document.getElementById('explore-log');
+    el.style.transition = 'background 0.08s';
+    el.style.background = 'rgba(255,255,255,.04)';
+    setTimeout(() => { el.style.background = ''; }, 220);
+  },
 };
 
 // ================================================================
@@ -1224,10 +1269,15 @@ const BATTLE = {
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
     STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
     if (STATE.floorProgress >= 5 || e.isBoss) {
+      const prevArea = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor)?.name;
       STATE.floor++;
       STATE.floorProgress = 0;
       updateBestFloor();
       addLog(`🆙 B${STATE.floor}Fへ進んだ`, 'system'); // ISS-022: 昇階を絵文字で視覚強調
+      AUDIO.seFloorUp();   // 未接続だった階層上昇SEを接続
+      ANIM.floorUp();      // フロア数字ポップ演出
+      const newArea = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor)?.name;
+      if (newArea !== prevArea) setTimeout(() => ANIM.areaBanner(newArea), 350);
     }
     saveGame();
     STATE.inBattle = false;
@@ -1446,13 +1496,17 @@ const G={
       STATE.exploring=false;clearInterval(STATE.exploreTimer);
       const e=spawnEnemy(STATE.floor,boss);STATE.currentEnemy=e;
       addLog(boss?`⚠ ボス出現！ ${e.name}が立ちはだかった！`:`! ${e.name}が現れた！`,boss?'boss':'encounter');
+      ANIM.encounterAlert(boss);           // 遭遇フラッシュ（赤/金）
+      if(boss) ANIM.screenShake();         // ボス時は画面シェイクも追加
       renderExplore();setTimeout(()=>G._openBattle(e),800);
     }else{
       const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
       const auto=spawnEnemy(STATE.floor);
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
-      addLog(`${auto.name} を自動討伐（+${gain}₪）`);
+      const slash=['⚔️','🗡️','💥','⚡','🌪️'][rand(0,4)];
+      addLog(`${slash} ${auto.name} を討伐 +${gain}₪`);
+      ANIM.logFlash();                     // ログエリア微フラッシュ
       saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
       renderExplore();
     }

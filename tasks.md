@@ -1,7 +1,7 @@
 # DAEMON RIFT — タスク・進捗管理
 
-**最終更新:** 2026-05-06  
-**現在のバージョン:** v0.6.0（バグ修正・スキル選択・深度BGM）
+**最終更新:** 2026-05-08  
+**現在のバージョン:** v0.7.0（探索演出強化）
 
 ---
 
@@ -67,6 +67,16 @@
 ## ■ バージョン履歴（全バージョン）
 
 > index.html のコメントヘッダーには最新バージョンと日付のみ記載。詳細履歴はこのファイルで管理。
+
+### v0.7.0（2026-05-08）
+- 探索演出強化: `ANIM.floorUp()` / `encounterAlert()` / `areaBanner()` / `logFlash()` を追加
+- バグ修正: `AUDIO.seFloorUp()` が未接続だった問題を修正。`BATTLE._enemyDefeated()` でフロア昇階時に呼び出すよう接続
+- プログレスバー危険状態: `STATE.floorProgress >= 4` 時に `danger` クラスを付与（橙→赤グラデーション+パルスアニメ）
+- 瀕死HPパルス: `.hp-bar.critical` に `hp-pulse` アニメーションを追加（赤点滅）
+- フロア到達演出: `_enemyDefeated()` 昇階時に `ANIM.floorUp()`（ゴールドポップ）と `AUDIO.seFloorUp()` を発火
+- エリア遷移バナー: 廃都表層→地下街区→冥界回廊→虚無の底の境界突破時に `ANIM.areaBanner()` を表示
+- エンカウント演出: `_exploreStep()` 戦闘突入時に赤フラッシュ、ボス時は追加シェイクを付与
+- 自動討伐ログ: ランダム武器絵文字（⚔️🗡️💥⚡🌪️）＋`ANIM.logFlash()` で視覚的変化を追加
 
 ### v0.6.0（2026-05-06）
 - バグ修正: `startNewGame()` で `_skillStoneActive` / `_guardActive` を `Object.assign` でリセット（ゲームオーバー時にフラグが残存すると新ゲームに引き継がれるバグ）
