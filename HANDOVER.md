@@ -9,12 +9,23 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.6.0
-**現在の状態:** リリース済み。バグ修正2件・スキル選択パネル・深度帯BGMを実装。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.7.0
+**現在の状態:** リリース済み。探索演出を全面強化。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.7.0（2026-05-08）
+- **バグ修正:** `AUDIO.seFloorUp()` が存在するにもかかわらずどこからも呼ばれていなかった問題を修正。`BATTLE._enemyDefeated()` のフロア昇階分岐で接続
+- **機能追加:** `ANIM.floorUp()` — 昇階時に `#floor-display` をゴールドglow+スケールポップ
+- **機能追加:** `ANIM.encounterAlert(isBoss)` — エンカウント直前にフルスクリーン赤フラッシュ（ボスは金色）
+- **機能追加:** `ANIM.areaBanner(areaName)` — エリア境界突破時（F11/31/61）に紫バナーを表示
+- **機能追加:** `ANIM.logFlash()` — 自動討伐ごとにログエリアを微フラッシュ
+- **UI強化:** プログレスバー4/5以上で `danger` クラス付与（橙グラデーション+パルスアニメ）
+- **UI強化:** `.hp-bar.critical` に赤点滅アニメを追加（CSS のみ）
+- **ログ演出:** 自動討伐ログにランダム武器絵文字（⚔️🗡️💥⚡🌪️）を追加
+- **ボス演出:** ボス出現時に `encounterAlert` + `screenShake` を重ねがけ
 
 ### v0.6.0（2026-05-06）
 - **バグ修正:** `startNewGame()` の `Object.assign` に `_skillStoneActive:false, _guardActive:false` を追加。ゲームオーバー時にフラグが残存したまま新ゲームが始まるバグを修正
@@ -147,7 +158,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.6.0'   // script.js [BLOCK: META]
+APP_VERSION          = '0.7.0'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'
