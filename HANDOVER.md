@@ -9,12 +9,23 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.8.0
-**現在の状態:** リリース済み。戦闘UI大幅強化（パーティHP常時表示・交代・交渉成功率・多段ログほか10改善）。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.9.0
+**現在の状態:** リリース済み。パーティ管理・戦闘UI改善（ストリップ位置変更・隊列変更・属性ヒント・倉庫交代・ボス警告ほか8改善）。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.9.0（2026-05-08）
+- **レイアウト変更:** `battle-party-strip` を `battle-log-area` 直下に移動（戦闘ログと仲魔HPを隣接させて視認性向上）
+- **機能追加:** パーティ隊列変更UI — `renderPartyScreen()` で in-party 仲魔に ↑/↓ ボタンを追加。`G.movePartyUp(uid)` / `G.movePartyDown(uid)` で配列要素をスワップ
+- **機能追加:** 倉庫から戦闘中交代 — `BATTLE.openPartySwap()` を拡張。戦死枠がある場合に `STATE.storage` の仲魔を呼び出し可能。`BATTLE.doStorageSwap(uid)` で戦死仲魔と入れ替え
+- **機能追加:** 属性弱点インジケータ — `UI.updateAffinityHint()` 追加。`BATTLE.open()` / `doPartySwap()` / `doStorageSwap()` から呼ばれ、リード仲魔の属性有利/不利を `#affinity-hint` に表示
+- **機能追加:** ストリップカードタップでスキル確認 — `renderBattlePartyStrip()` の各カードに `onclick` を追加。`showToast` でスキル名を表示
+- **機能追加:** ボスフロア接近警告 — `_exploreStep()` の自動討伐ブランチで `floorProgress===4 && floor%10===9` 時に warn ログ
+- **機能追加:** 合体プレビューにステータス表示 — `renderFusionScreen()` で `createDemon(r.masterId, r.lv)` を呼び `#fusion-result-stats` にHP/ATK/DEF/SPD を表示
+- **UX改善:** パーティバー・パーティ画面に LEAD バッジ追加（最前衛の生存仲魔をシアンで明示）
+- **UX改善:** 逃走ボタンに成功率を明示（`🏃 逃げる（60%）`、`id="btn-flee"` 付与）
 
 ### v0.8.0（2026-05-08）
 - **機能追加:** 戦闘中パーティHPストリップ（`battle-party-strip`）— 戦闘ヘッダー直下に常時表示。`UI.renderBattlePartyStrip()` で描画。リード仲魔はシアン枠・死亡仲魔は赤枠+半透明。`BATTLE.open()` / `_enemyAttack()` / `_executeSkill()` / `applyBattleItem()` / `doPartySwap()` から呼ばれる
@@ -171,7 +182,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.8.0'   // script.js [BLOCK: META]
+APP_VERSION          = '0.9.0'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'

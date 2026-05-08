@@ -64,7 +64,8 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 .battle-macca{font-size:11px;color:var(--gold);min-width:60px;text-align:right}
 /* battle party strip */
 .battle-party-strip{display:flex;gap:5px;padding:5px 14px;background:rgba(0,0,0,.25);border-bottom:1px solid var(--border)}
-.bps-card{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 5px;min-width:0;text-align:center}
+.bps-card{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 5px;min-width:0;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.bps-card:active{background:#1e1e30}
 .bps-card.lead{border-color:var(--cyan)}
 .bps-card.dead{opacity:.35;border-color:var(--red)}
 .bps-emoji{font-size:14px;line-height:1.2}
@@ -76,6 +77,8 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 .bps-hp-fill.low{background:var(--orange)}.bps-hp-fill.critical{background:var(--red)}
 /* enemy debuff */
 .enemy-debuff-tag{display:inline-block;background:rgba(142,68,173,.4);color:var(--purple);font-size:10px;padding:1px 6px;border-radius:3px;margin-top:3px}
+/* 属性弱点インジケータ */
+.affinity-hint{font-size:10px;font-weight:bold;margin-top:3px;letter-spacing:.5px}
 .battle-enemy-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px}
 .enemy-display{width:120px;height:120px;display:flex;align-items:center;justify-content:center}
 .enemy-sprite{font-size:70px;filter:drop-shadow(0 0 20px rgba(192,57,43,.6));animation:enemyFloat 2s ease-in-out infinite}
