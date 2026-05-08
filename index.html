@@ -1,7 +1,7 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.7.0
+  Version : 0.8.0
   Updated : 2026-05-08
   Author  : ののやま
 ================================================================
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.7.0">
+<meta name="version" content="0.8.0">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -62,9 +62,13 @@
 
   <div id="screen-battle" class="screen">
     <div class="battle-header">
-      <div class="battle-floor" id="battle-floor-text">B1F</div>
-      <div class="battle-title" id="battle-title-text">ENCOUNTER</div>
+      <div class="battle-header-center">
+        <div class="battle-floor" id="battle-floor-text">B1F</div>
+        <div class="battle-title" id="battle-title-text">ENCOUNTER</div>
+      </div>
+      <div class="battle-macca">₪ <span id="battle-macca-display">0</span></div>
     </div>
+    <div class="battle-party-strip" id="battle-party-strip"></div>
     <div class="battle-enemy-area">
       <div class="enemy-display"><div class="enemy-sprite" id="enemy-sprite">👿</div></div>
       <div class="enemy-info">
@@ -72,20 +76,22 @@
         <div class="enemy-tags">
           <span class="tag race-tag" id="enemy-race-tag">???</span>
           <span class="tag" id="enemy-attr-tag">???</span>
+          <span class="tag" id="enemy-lv-tag" style="background:rgba(255,255,255,.06);color:var(--muted)">Lv?</span>
         </div>
         <div class="enemy-hp-wrap"><div class="enemy-hp-bar" id="enemy-hp-bar" style="width:100%"></div></div>
         <div class="enemy-hp-text" id="enemy-hp-text">HP: -- / --</div>
+        <div id="enemy-debuff" style="display:none"><span class="enemy-debuff-tag">🔻 デバフ中</span></div>
       </div>
     </div>
-    <div class="battle-log-area"><div class="battle-log-text" id="battle-log">...</div></div>
+    <div class="battle-log-area" id="battle-log"></div>
     <div class="negotiate-panel" id="negotiate-panel">
       <div class="negotiate-title">▌ 交渉方法を選べ</div>
-      <div class="negotiate-opts">
+      <div class="negotiate-opts" id="negotiate-opts">
         <button class="btn"         onclick="G.doNegotiate('おだてる')">😊 おだてる（成功率：中）</button>
         <button class="btn warn"    onclick="G.doNegotiate('脅す')">😤 脅す（成功率：低）</button>
         <button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（成功率：高）</button>
-        <button class="btn"         onclick="G.cancelNegotiate()">✕ キャンセル</button>
       </div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelNegotiate()">✕ キャンセル</button>
     </div>
     <!-- アイテムパネル（negotiate-panelと同パターン） -->
     <div class="negotiate-panel" id="item-panel">
@@ -99,6 +105,12 @@
       <div class="negotiate-opts" id="skill-panel-list"></div>
       <button class="btn" style="margin-top:4px;" onclick="G.cancelSkillPanel()">✕ キャンセル</button>
     </div>
+    <!-- パーティ交代パネル -->
+    <div class="negotiate-panel" id="party-swap-panel">
+      <div class="negotiate-title">▌ 先頭仲魔を交代（1ターン消費）</div>
+      <div class="negotiate-opts" id="party-swap-list"></div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelPartySwap()">✕ キャンセル</button>
+    </div>
     <div class="battle-actions" id="battle-actions">
       <div class="action-row">
         <button class="btn primary" onclick="G.doAttack()">⚔ 攻撃</button>
@@ -108,9 +120,9 @@
         <button class="btn"          onclick="G.doFlee()">🏃 逃げる</button>
         <button class="btn disabled" id="btn-skill" onclick="G.doSkill()">✨ スキル</button>
       </div>
-      <!-- アイテムボタン行を追加 -->
       <div class="action-row">
         <button class="btn" id="btn-battle-item" onclick="G.startItemPanel()">🎒 アイテム</button>
+        <button class="btn" onclick="G.openPartySwap()">🔀 交代</button>
       </div>
     </div>
   </div>

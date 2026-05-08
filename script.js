@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -531,7 +531,7 @@ const UI = {
       } else {
         const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
         card.className = `party-card ${d.hp <= 0 ? 'dead' : ''}`;
-        card.innerHTML = `<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div>`;
+        card.innerHTML = `<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:9px;color:var(--muted);text-align:right;margin-top:1px">${Math.max(0,d.hp)}/${d.maxHp}</div>`;
       }
       list.appendChild(card);
     }
@@ -544,10 +544,40 @@ const UI = {
     document.getElementById('enemy-hp-text').textContent = `HP: ${Math.max(0, e.hp)} / ${e.maxHp}`;
   },
 
-  // 戦闘ログを更新する（フェードアニメーション付き）
+  // 戦闘ログを更新する（直近3行を保持・古い行はフェード）
   setBattleLog(msg) {
     const el = document.getElementById('battle-log');
-    el.textContent = msg; el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    el.querySelectorAll('.battle-log-line').forEach(l => l.classList.add('old'));
+    const div = document.createElement('div');
+    div.className = 'battle-log-line';
+    div.textContent = msg;
+    el.appendChild(div);
+    const lines = el.querySelectorAll('.battle-log-line');
+    if (lines.length > 3) lines[0].remove();
+  },
+
+  // 戦闘中パーティステータスストリップを更新する
+  renderBattlePartyStrip() {
+    const strip = document.getElementById('battle-party-strip');
+    if (!strip) return;
+    const lead = STATE.party.find(d => d.hp > 0);
+    strip.innerHTML = '';
+    STATE.party.forEach(d => {
+      const pct = Math.max(0, (d.hp / d.maxHp) * 100);
+      const bc = pct > 50 ? '' : pct > 25 ? 'low' : 'critical';
+      const isLead = lead && d.uid === lead.uid;
+      const isDead = d.hp <= 0;
+      const card = document.createElement('div');
+      card.className = `bps-card${isLead ? ' lead' : ''}${isDead ? ' dead' : ''}`;
+      card.innerHTML = `<div class="bps-emoji">${d.emoji}</div><div class="bps-name">${d.name}</div><div class="bps-hp ${bc}">${Math.max(0,d.hp)}/${d.maxHp}</div><div class="bps-hp-bar"><div class="bps-hp-fill ${bc}" style="width:${pct}%"></div></div>`;
+      strip.appendChild(card);
+    });
+    for (let i = STATE.party.length; i < 3; i++) {
+      const card = document.createElement('div');
+      card.className = 'bps-card';
+      card.innerHTML = '<div style="font-size:10px;color:var(--border)">—</div>';
+      strip.appendChild(card);
+    }
   },
 
   // 探索ログに1行追加する（最大50行）
@@ -1073,11 +1103,16 @@ const BATTLE = {
     const at = document.getElementById('enemy-attr-tag');
     at.textContent = enemy.attr;
     at.className = `tag attr-${enemy.attr}`;
+    document.getElementById('enemy-lv-tag').textContent = `Lv${enemy.lv}`;
+    document.getElementById('enemy-debuff').style.display = 'none';
+    document.getElementById('battle-macca-display').textContent = STATE.macca;
+    document.getElementById('battle-log').innerHTML = '';
     renderEnemyHP();
     setBattleLog(`${enemy.name} が立ちはだかる！`);
     document.getElementById('negotiate-panel').classList.remove('active');
     document.getElementById('item-panel').classList.remove('active');
     document.getElementById('skill-panel').classList.remove('active');
+    document.getElementById('party-swap-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
     // ISS-013: リード仲魔のスキル有無でスキルボタンの活性状態を制御
     const lead = STATE.party.find(d => d.hp > 0);
@@ -1089,6 +1124,7 @@ const BATTLE = {
       skillBtn.classList.add('disabled');
       skillBtn.disabled = true;
     }
+    UI.renderBattlePartyStrip();
     AUDIO.playBgmBattle(enemy.isBoss);
     G.showScreen('screen-battle');
   },
@@ -1158,8 +1194,14 @@ const BATTLE = {
     if (result.effect === 'weakness') { AUDIO.seWeakness(); ANIM.weaknessFlash(); }
     else { ANIM.attackFlash(lead.attr); }
     if (result.dmg > 0) ANIM.floatDamage(result.dmg, result.effect === 'weakness');
-    if (result.effect === 'heal') { renderPartyBar(); }
-    else { playEnemyHitAnim(); renderEnemyHP(); }
+    if (result.effect === 'heal') { renderPartyBar(); UI.renderBattlePartyStrip(); }
+    else {
+      playEnemyHitAnim(); renderEnemyHP();
+      if (result.effect === 'debuff') {
+        const debuffEl = document.getElementById('enemy-debuff');
+        if (debuffEl) debuffEl.style.display = '';
+      }
+    }
     if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
@@ -1182,6 +1224,14 @@ const BATTLE = {
 
   startNegotiate() {
     if (STATE.currentEnemy?.isBoss) { showToast('ボスと交渉できない！'); return; }
+    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
+    if (lead && e) {
+      const rate = t => Math.round(calcNegotiateRate(lead.lv, e.lv, t) * 100);
+      document.getElementById('negotiate-opts').innerHTML =
+        `<button class="btn" onclick="G.doNegotiate('おだてる')">😊 おだてる（${rate('おだてる')}%）</button>` +
+        `<button class="btn warn" onclick="G.doNegotiate('脅す')">😤 脅す（${rate('脅す')}%）</button>` +
+        `<button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（${rate('金で解決')}%）</button>`;
+    }
     document.getElementById('negotiate-panel').classList.add('active');
     document.getElementById('battle-actions').style.display = 'none';
   },
@@ -1204,6 +1254,7 @@ const BATTLE = {
         return;
       }
       STATE.macca -= cost;
+      document.getElementById('battle-macca-display').textContent = STATE.macca;
     }
     document.getElementById('negotiate-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
@@ -1243,7 +1294,7 @@ const BATTLE = {
     t.hp = Math.max(0, t.hp - dmg);
     AUDIO.seHit();
     setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);
-    renderPartyBar();
+    renderPartyBar(); UI.renderBattlePartyStrip();
     if (t.hp <= 0) {
       setBattleLog(`${t.name} は倒れた…`);
       if (STATE.party.every(d => d.hp <= 0)) {
@@ -1264,7 +1315,7 @@ const BATTLE = {
       d.exp += eg;
       if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
     });
-    setBattleLog(`${e.name}を倒した！ +${mg}₪`);
+    setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`);
     playEnemyHitAnim();
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
     STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
@@ -1335,6 +1386,44 @@ const BATTLE = {
     document.getElementById('battle-actions').style.display = '';
   },
 
+  // パーティ交代パネルを開く
+  openPartySwap() {
+    if (!STATE.inBattle) return;
+    const lead = STATE.party.find(d => d.hp > 0);
+    const others = STATE.party.filter(d => d.hp > 0 && d.uid !== lead?.uid);
+    if (!others.length) { showToast('交代できる仲魔がいない'); return; }
+    const list = document.getElementById('party-swap-list');
+    list.innerHTML = '';
+    others.forEach(d => {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = `${d.emoji} ${d.name} Lv${d.lv}  HP ${d.hp}/${d.maxHp}`;
+      btn.onclick = () => G.doPartySwap(d.uid);
+      list.appendChild(btn);
+    });
+    document.getElementById('party-swap-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  cancelPartySwap() {
+    document.getElementById('party-swap-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  doPartySwap(uid) {
+    const d = STATE.party.find(x => x.uid === uid);
+    if (!d || d.hp <= 0) return;
+    STATE.party = [d, ...STATE.party.filter(x => x.uid !== uid)];
+    document.getElementById('party-swap-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+    const skillBtn = document.getElementById('btn-skill');
+    if (d.skills?.length) { skillBtn.classList.remove('disabled'); skillBtn.disabled = false; }
+    else { skillBtn.classList.add('disabled'); skillBtn.disabled = true; }
+    UI.renderBattlePartyStrip();
+    setBattleLog(`${d.name} が前衛に出た！`);
+    setTimeout(() => BATTLE._enemyAttack(), 600);
+  },
+
   // 問題3: useItem → applyBattleItem にリネーム（UI._useItem との混在を解消）
   // 戦闘中アイテム使用（ITEM.use() 経由・使用後に敵ターンを発生させる）
   applyBattleItem(itemName) {
@@ -1342,7 +1431,7 @@ const BATTLE = {
     if (!result.ok) { showToast(result.msg); return; }
     setBattleLog(`🎒 ${result.msg}`);
     saveGame();
-    renderPartyBar();
+    renderPartyBar(); UI.renderBattlePartyStrip();
     BATTLE.cancelItemPanel();
     // 問題1: アイテム使用をターン消費とし敵の反撃を発生させる
     // 問題2: 御札もここで敵ターンを呼ぶことでフラグ→即発動の流れになる
@@ -1531,6 +1620,10 @@ const G={
   startSkillPanel(){ BATTLE.startSkillPanel(); },
   cancelSkillPanel(){ BATTLE.cancelSkillPanel(); },
   doSkillSelect(skillName){ BATTLE._executeSkill(skillName); },
+  // パーティ交代委譲
+  openPartySwap(){ BATTLE.openPartySwap(); },
+  cancelPartySwap(){ BATTLE.cancelPartySwap(); },
+  doPartySwap(uid){ BATTLE.doPartySwap(uid); },
 
 
 

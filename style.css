@@ -57,9 +57,25 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 .progress-bar{height:100%;background:linear-gradient(90deg,var(--purple),var(--cyan));border-radius:3px;transition:width 1s linear}
 /* battle */
 #screen-battle{background:radial-gradient(ellipse at 50% 20%,#1a0018 0%,var(--bg) 60%)}
-.battle-header{padding:12px 14px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);text-align:center}
+.battle-header{padding:8px 14px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.battle-header-center{text-align:center;flex:1}
 .battle-floor{font-size:11px;color:var(--muted);letter-spacing:2px}
 .battle-title{font-size:14px;color:var(--red);letter-spacing:1px}
+.battle-macca{font-size:11px;color:var(--gold);min-width:60px;text-align:right}
+/* battle party strip */
+.battle-party-strip{display:flex;gap:5px;padding:5px 14px;background:rgba(0,0,0,.25);border-bottom:1px solid var(--border)}
+.bps-card{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:4px 5px;min-width:0;text-align:center}
+.bps-card.lead{border-color:var(--cyan)}
+.bps-card.dead{opacity:.35;border-color:var(--red)}
+.bps-emoji{font-size:14px;line-height:1.2}
+.bps-name{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bps-hp{font-size:9px;color:var(--green)}
+.bps-hp.low{color:var(--orange)}.bps-hp.critical{color:var(--red)}
+.bps-hp-bar{height:3px;background:var(--border);border-radius:1px;overflow:hidden;margin-top:2px}
+.bps-hp-fill{height:100%;background:var(--green);border-radius:1px;transition:width .3s}
+.bps-hp-fill.low{background:var(--orange)}.bps-hp-fill.critical{background:var(--red)}
+/* enemy debuff */
+.enemy-debuff-tag{display:inline-block;background:rgba(142,68,173,.4);color:var(--purple);font-size:10px;padding:1px 6px;border-radius:3px;margin-top:3px}
 .battle-enemy-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px}
 .enemy-display{width:120px;height:120px;display:flex;align-items:center;justify-content:center}
 .enemy-sprite{font-size:70px;filter:drop-shadow(0 0 20px rgba(192,57,43,.6));animation:enemyFloat 2s ease-in-out infinite}
@@ -72,8 +88,9 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 .enemy-hp-wrap{width:200px;height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:0 auto}
 .enemy-hp-bar{height:100%;background:linear-gradient(90deg,var(--red),var(--orange));border-radius:4px;transition:width .4s}
 .enemy-hp-text{font-size:11px;color:var(--muted);margin-top:4px}
-.battle-log-area{padding:8px 14px;min-height:50px;max-height:70px;overflow:hidden}
-.battle-log-text{font-size:13px;line-height:1.6;color:var(--text);animation:fadeIn .2s ease}
+.battle-log-area{padding:6px 14px;min-height:56px;max-height:88px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:2px}
+.battle-log-line{font-size:12px;line-height:1.5;color:var(--text);animation:fadeIn .2s ease}
+.battle-log-line.old{color:var(--muted);font-size:11px}
 .battle-actions{background:var(--bg2);border-top:1px solid var(--border);padding:12px 14px}
 .action-row{display:flex;gap:8px;margin-bottom:8px}
 .action-row:last-child{margin-bottom:0}

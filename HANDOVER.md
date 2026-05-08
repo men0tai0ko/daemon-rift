@@ -9,12 +9,24 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.7.0
-**現在の状態:** リリース済み。探索演出を全面強化。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.8.0
+**現在の状態:** リリース済み。戦闘UI大幅強化（パーティHP常時表示・交代・交渉成功率・多段ログほか10改善）。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.8.0（2026-05-08）
+- **機能追加:** 戦闘中パーティHPストリップ（`battle-party-strip`）— 戦闘ヘッダー直下に常時表示。`UI.renderBattlePartyStrip()` で描画。リード仲魔はシアン枠・死亡仲魔は赤枠+半透明。`BATTLE.open()` / `_enemyAttack()` / `_executeSkill()` / `applyBattleItem()` / `doPartySwap()` から呼ばれる
+- **機能追加:** パーティ交代機能 — `BATTLE.openPartySwap()` / `cancelPartySwap()` / `doPartySwap(uid)` を追加。「🔀 交代」ボタンから先頭を変更。1ターン消費（`_enemyAttack()` を呼ぶ）
+- **機能追加:** 交渉成功率リアルタイム表示 — `startNegotiate()` で `calcNegotiateRate()` を使い %表記に更新
+- **機能追加:** 戦闘ログ多段表示 — `setBattleLog()` を書き替え。最新3行を保持し古い行に `old` クラスでフェード
+- **機能追加:** 敵レベル表示 — `id="enemy-lv-tag"` を追加。`BATTLE.open()` で設定
+- **機能追加:** EXP表示 — `_enemyDefeated()` のログに `EXP+N` を追記
+- **機能追加:** デバフインジケータ — `_executeSkill()` でデバフ命中時に `id="enemy-debuff"` を表示
+- **機能追加:** 戦闘中マッカ常時表示 — ヘッダー右端 `id="battle-macca-display"`。`BATTLE.open()` と交渉コスト支払い時に更新
+- **機能改善:** 探索パーティバーにHP数値（現在/最大）を追加（`UI.renderPartyBar()` の card.innerHTML）
+- **HTML変更:** `battle-log-area` の `id` を内部 div から外部コンテナに移動。`negotiate-opts` に `id` 追加（動的更新用）。`party-swap-panel` を追加
 
 ### v0.7.0（2026-05-08）
 - **バグ修正:** `AUDIO.seFloorUp()` が存在するにもかかわらずどこからも呼ばれていなかった問題を修正。`BATTLE._enemyDefeated()` のフロア昇階分岐で接続
@@ -101,6 +113,7 @@
 優先度順。詳細は `tasks.md` を参照。
 
 ### 1. Android Chrome 実機動作確認（優先度: 中）
+（v0.8.0でも未実施）
 iOS Safari は確認済み。Android Chrome での動作・レイアウト・音声を未確認。
 
 ---
@@ -158,7 +171,7 @@ iOS Safari は確認済み。Android Chrome での動作・レイアウト・音
 ## ■ 主要定数・設定値
 
 ```javascript
-APP_VERSION          = '0.7.0'   // script.js [BLOCK: META]
+APP_VERSION          = '0.8.0'   // script.js [BLOCK: META]
 SAVE_SCHEMA_VERSION  = 3         // script.js [BLOCK: SAVE]（v0.4.5でlegacyMacca追加）
 LS_KEY_SAVE          = 'daemonrift_save'
 LS_KEY_BEST          = 'daemonrift_best'
