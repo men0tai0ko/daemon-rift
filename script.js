@@ -725,7 +725,7 @@ const UI = {
       el.className = `demon-card-full ${d.inParty ? 'in-party' : ''} ${!d.inParty && d.hp <= 0 ? 'hp-zero' : ''}`;
       // ISS-018: 倉庫悪魔かつパーティ満員時はボタンをdisabled化
       const btnDisabled = !d.inParty && partyFull ? ' disabled' : '';
-      const hpZeroNote = !d.inParty && d.hp <= 0 ? '<div style="font-size:10px;color:var(--red);margin-top:2px">宿屋でHP回復が必要</div>' : '';
+      const hpZeroNote = !d.inParty && d.hp <= 0 ? '<div style="font-size:10px;color:var(--red);margin-top:2px">覚醒の書で蘇生が必要</div>' : '';
       const isLead = lead && d.uid === lead.uid;
       const partyIdx = STATE.party.indexOf(d);
       // パーティ内隊列変更ボタン（上下矢印）
