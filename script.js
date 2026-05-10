@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.13.0';
+const APP_VERSION = '0.14.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -216,6 +216,13 @@ function applyLevelUp(demon){
 // 計算式: floor(log1p(bestFloor) × 80)、上限 500₪
 function calcLegacyBonus(bestFloor){
   return Math.min(500, Math.floor(Math.log1p(bestFloor) * 80));
+}
+
+// 逃走成功率: リード仲魔のSPDと敵Lvの差で動的計算（20%〜90%）
+function calcFleeRate(lead, enemy){
+  const base=0.5;
+  const diff=(lead?.spd??10)-(enemy?.lv??1);
+  return Math.min(0.9,Math.max(0.2,base+diff*0.03));
 }
 
 
@@ -526,7 +533,8 @@ const UI = {
     pb.style.width = `${(STATE.floorProgress / 5) * 100}%`;
     pb.classList.toggle('danger', STATE.floorProgress >= 4 && STATE.floor % 10 !== 0);
     document.getElementById('progress-label-num').textContent = `${STATE.floorProgress} / 5`;
-    document.getElementById('progress-label-text').textContent = STATE.floor % 10 === 0 ? '⚠ ボスフロア' : 'フロア進行';
+    const nextBoss=Math.ceil(STATE.floor/10)*10;
+    document.getElementById('progress-label-text').textContent = STATE.floor%10===0?'⚠ ボスフロア':`次ボス:B${nextBoss}F`;
     document.getElementById('btn-explore-toggle').textContent = STATE.exploring ? '⏸ 探索停止' : '▶ 探索開始';
     const fusionBtn = document.getElementById('btn-fusion-explore');
     if (fusionBtn) fusionBtn.classList.toggle('disabled', STATE.exploring);
@@ -664,7 +672,8 @@ const UI = {
         preview.classList.add('active');
         document.getElementById('fusion-result-emoji').textContent = r.emoji;
         document.getElementById('fusion-result-name').textContent = `${r.name} Lv${r.lv}`;
-        document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}`;
+        const stoneLabel = STATE._skillStoneActive ? ' 💎 確定継承' : '';
+        document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}${stoneLabel}`;
         const rd = createDemon(r.masterId, r.lv);
         document.getElementById('fusion-result-stats').textContent = rd ? `HP:${rd.maxHp} ATK:${rd.atk} DEF:${rd.def} SPD:${rd.spd}` : '';
         // ISS-023: 合体可能なら実行ボタンを活性化
@@ -709,11 +718,12 @@ const UI = {
       el.className = `demon-card-full ${d.inParty ? 'in-party' : ''} ${!d.inParty && d.hp <= 0 ? 'hp-zero' : ''}`;
       // ISS-018: 倉庫悪魔かつパーティ満員時はボタンをdisabled化
       const btnDisabled = !d.inParty && partyFull ? ' disabled' : '';
+      const hpZeroNote = !d.inParty && d.hp <= 0 ? '<div style="font-size:10px;color:var(--red);margin-top:2px">宿屋でHP回復が必要</div>' : '';
       const isLead = lead && d.uid === lead.uid;
       const partyIdx = STATE.party.indexOf(d);
       // パーティ内隊列変更ボタン（上下矢印）
       const reorderHtml = d.inParty ? `<div style="display:flex;flex-direction:column;gap:3px;margin-right:6px"><button class="btn${partyIdx === 0 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyUp('${d.uid}')" ${partyIdx === 0 ? 'disabled' : ''}>↑</button><button class="btn${partyIdx === STATE.party.length - 1 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyDown('${d.uid}')" ${partyIdx === STATE.party.length - 1 ? 'disabled' : ''}>↓</button></div>` : '';
-      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd} ／ EXP:${d.exp}/${d.expNext}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd} ／ EXP:${d.exp}/${d.expNext}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div>${hpZeroNote}</div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
       content.appendChild(el);
     });
     // ISS-012: 倉庫0体時に空表示を追加
@@ -1290,6 +1300,9 @@ const BATTLE = {
       skillBtn.classList.add('disabled');
       skillBtn.disabled = true;
     }
+    // 逃走成功率を動的表示
+    const fleeBtn = document.getElementById('btn-flee');
+    if (fleeBtn) fleeBtn.textContent = `🏃 逃げる（${Math.round(calcFleeRate(lead,enemy)*100)}%）`;
     UI.renderBattlePartyStrip();
     UI.updateAffinityHint();
     AUDIO.playBgmBattle(enemy.isBoss);
@@ -1395,7 +1408,8 @@ const BATTLE = {
   },
 
   flee() {
-    if (chance(0.6)) {
+    const fleeLead = STATE.party.find(d => d.hp > 0);
+    if (chance(calcFleeRate(fleeLead, STATE.currentEnemy))) {
       STATE.inBattle = false;
       AUDIO.seFlee();
       setBattleLog('うまく逃げ切った！', 'system');
@@ -1744,6 +1758,12 @@ const FUSION = {
     // 既に選択済みなら解除
     if (STATE.fusionA?.uid === uid) { STATE.fusionA = null; STATE.fusionSlot = null; renderFusionScreen(); return; }
     if (STATE.fusionB?.uid === uid) { STATE.fusionB = null; STATE.fusionSlot = null; renderFusionScreen(); return; }
+    // パーティ最後の生存仲魔を素材選択しようとした場合に警告
+    if (d.inParty) {
+      const otherFusionUids=[STATE.fusionA?.uid,STATE.fusionB?.uid].filter(u=>u&&u!==uid);
+      const surviving=STATE.party.filter(p=>p.hp>0&&p.uid!==uid&&!otherFusionUids.includes(p.uid));
+      if(surviving.length===0) showToast('⚠ パーティが全滅状態になります！');
+    }
     // スロット明示指定モード
     if (STATE.fusionSlot === 'a') {
       if (STATE.fusionB?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
@@ -1863,7 +1883,8 @@ const G={
       const btn=document.createElement('button');
       btn.className=`btn${f===best?' primary':''}`;
       btn.style.cssText='margin-bottom:4px;';
-      btn.textContent=`B${f}F — ${area}`;
+      const bossLabel=f%10===0?' ⚠ ボス':'';
+      btn.textContent=`B${f}F${bossLabel} — ${area}`;
       btn.onclick=()=>G._doEnterDungeon(f);
       list.appendChild(btn);
     });
@@ -1888,7 +1909,7 @@ const G={
     if(STATE.exploring){showToast('探索を停止してから地上へ');return;}
     const bonus=STATE.floor*10;
     const bonusEl=document.getElementById('surface-bonus-text');
-    if(bonusEl) bonusEl.textContent=`地上に戻ります。フロア進行はリセット。帰還ボーナス ₪${bonus}`;
+    if(bonusEl) bonusEl.textContent=`地上に戻ります。フロア進行はリセット。帰還ボーナス: B${STATE.floor}F × 10 = ₪${bonus}`;
     document.getElementById('surface-confirm-panel').classList.add('active');
   },
   cancelSurface(){
@@ -2022,14 +2043,20 @@ const G={
         d.exp+=expGain;
         if(d.exp>=d.expNext){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
       });
-      // 自動討伐: 先頭仲魔が微ダメージを受ける（HP1以下にはならない）
-      const lead=STATE.party.find(d=>d.hp>0);
-      if(lead){const autoDmg=rand(1,Math.max(1,Math.ceil(lead.maxHp*0.04)));lead.hp=Math.max(1,lead.hp-autoDmg);}
+      // 自動討伐: ランダムな生存仲魔が微ダメージを受ける（HP1以下にはならない）
+      const aliveMembers=STATE.party.filter(d=>d.hp>0);
+      let autoTarget=null,autoDmg=0;
+      if(aliveMembers.length){
+        autoTarget=aliveMembers[rand(0,aliveMembers.length-1)];
+        autoDmg=rand(1,Math.max(1,Math.ceil(autoTarget.maxHp*0.04)));
+        autoTarget.hp=Math.max(1,autoTarget.hp-autoDmg);
+      }
       const auto=spawnEnemy(STATE.floor);
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
       const slash=['⚔️','🗡️','💥','⚡','🌪️'][rand(0,4)];
-      addLog(`${slash} ${auto.name} を討伐 +${gain}₪ EXP+${expGain}`);
+      const dmgNote=autoTarget?`（${autoTarget.name} -${autoDmg}HP）`:'';
+      addLog(`${slash} ${auto.name} を討伐 +${gain}₪ EXP+${expGain} ${dmgNote}`);
       // ボスフロア接近警告: あと1戦で昇階 & 次フロアがボスの場合
       if (STATE.floorProgress === 4 && STATE.floor % 10 === 9) {
         addLog(`⚠ 次戦に勝てば B${STATE.floor + 1}F へ — ボスフロアだ！`, 'warn');
@@ -2037,7 +2064,7 @@ const G={
       STATE.party.forEach(d => {
         if (d.hp > 0) {
           const critical = d.hp <= Math.floor(d.maxHp * 0.25);
-          if (critical && !d._hpCritWarn) { addLog(`🚨 ${d.name} HP危機！（${d.hp}/${d.maxHp}）`, 'warn'); d._hpCritWarn = true; }
+          if (critical && !d._hpCritWarn) { addLog(`🚨 ${d.name} HP危機！（${d.hp}/${d.maxHp}）`, 'warn'); showToast(`🚨 ${d.name} HP危機！`); d._hpCritWarn = true; }
           else if (!critical) { d._hpCritWarn = false; }
         }
       });
