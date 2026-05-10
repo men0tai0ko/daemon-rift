@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.12.0';
+const APP_VERSION = '0.13.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -688,7 +688,7 @@ const UI = {
     [...STATE.party, ...STATE.storage].forEach(d => {
       const isA = STATE.fusionA?.uid === d.uid, isB = STATE.fusionB?.uid === d.uid;
       const el = document.createElement('div');
-      el.className = `fusion-demon-item ${(isA || isB) ? 'selected' : ''}`;
+      el.className = `fusion-demon-item${(isA || isB) ? ' selected' : ''}${d.inParty ? ' in-party' : ''}`;
       el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span> HP:${d.hp}/${d.maxHp}${d.inParty ? ' <span class="tag party-tag">PARTY</span>' : ''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA ? '[A]' : isB ? '[B]' : ''}</div>`;
       el.onclick = () => G.selectFusionDemon(d.uid);
       list.appendChild(el);
@@ -706,7 +706,7 @@ const UI = {
     all.forEach(d => {
       const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
       const el = document.createElement('div');
-      el.className = `demon-card-full ${d.inParty ? 'in-party' : ''}`;
+      el.className = `demon-card-full ${d.inParty ? 'in-party' : ''} ${!d.inParty && d.hp <= 0 ? 'hp-zero' : ''}`;
       // ISS-018: 倉庫悪魔かつパーティ満員時はボタンをdisabled化
       const btnDisabled = !d.inParty && partyFull ? ' disabled' : '';
       const isLead = lead && d.uid === lead.uid;
@@ -802,16 +802,49 @@ const UI = {
         ? `最高到達: B${STATE.bestFloor}F — 現在 B${STATE.floor}F`
         : STATE.floor > 1 ? `現在 B${STATE.floor}F` : '初めての潜入';
     }
+    // ミュートボタン状態同期
+    const muteBtn = document.getElementById('btn-town-mute');
+    if (muteBtn) muteBtn.textContent = AUDIO.isMuted ? '🔇' : '🔊';
+    // 宿屋ボタン（無効理由を明示）
     const innCost = Math.min(300, 50 + STATE.floor * 5);
     const btnInn = document.getElementById('btn-inn');
     if (btnInn) {
-      btnInn.textContent = `🛏 宿屋 ₪${innCost}`;
       const alive = STATE.party.filter(d => d.hp > 0);
-      const cannotHeal = !alive.length || alive.every(d => d.hp >= d.maxHp) || STATE.macca < innCost;
-      btnInn.classList.toggle('disabled', cannotHeal);
-      btnInn.disabled = cannotHeal;
+      if (!alive.length) {
+        btnInn.textContent = '🛏 宿屋（仲魔なし）';
+        btnInn.classList.add('disabled'); btnInn.disabled = true;
+      } else if (alive.every(d => d.hp >= d.maxHp)) {
+        btnInn.textContent = '🛏 宿屋（全員HP満タン）';
+        btnInn.classList.add('disabled'); btnInn.disabled = true;
+      } else if (STATE.macca < innCost) {
+        btnInn.textContent = `🛏 宿屋 ₪${innCost}（₪不足）`;
+        btnInn.classList.add('disabled'); btnInn.disabled = true;
+      } else {
+        btnInn.textContent = `🛏 宿屋 ₪${innCost}`;
+        btnInn.classList.remove('disabled'); btnInn.disabled = false;
+      }
     }
     UI.renderTownPartyStrip();
+    // アイテム在庫ストリップ
+    const itemStrip = document.getElementById('town-item-strip');
+    if (itemStrip) {
+      itemStrip.innerHTML = '';
+      const items = ITEM.list();
+      if (!items.length) {
+        const empty = document.createElement('span');
+        empty.style.cssText = 'font-size:11px;color:var(--muted)';
+        empty.textContent = 'アイテムなし';
+        itemStrip.appendChild(empty);
+      } else {
+        items.forEach(({ name, qty, icon }) => {
+          const span = document.createElement('span');
+          span.className = 'town-item-badge';
+          span.title = name;
+          span.textContent = `${icon}×${qty}`;
+          itemStrip.appendChild(span);
+        });
+      }
+    }
   },
 
   // 拠点の仲魔一覧ストリップ（パーティ＋倉庫）
@@ -1504,6 +1537,11 @@ const BATTLE = {
     }
     saveGame();
     STATE.inBattle = false;
+    // 戦闘後HP低下警告
+    const warnLead = STATE.party.find(d => d.hp > 0);
+    if (warnLead && warnLead.hp / warnLead.maxHp <= 0.3) {
+      addLog(`🏥 ${warnLead.name} HP危険（${warnLead.hp}/${warnLead.maxHp}）— 地上帰還を推奨`, 'warn');
+    }
     setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor); }, 1200);
   },
 
@@ -1810,9 +1848,40 @@ const G={
   showScreenFromTown(id){ STATE._returnTo='town'; G.showScreen(id); },
   showScreenFromDungeon(id){ STATE._returnTo='explore'; G.showScreen(id); },
   enterDungeon(){
+    if(STATE.bestFloor<=1){G._doEnterDungeon(1);return;}
+    // フロア選択パネルを構築
+    const best=STATE.bestFloor;
+    const el=document.getElementById('dungeon-best-floor');
+    if(el) el.textContent=best;
+    const list=document.getElementById('dungeon-floor-list');
+    list.innerHTML='';
+    const floors=[1];
+    for(let f=10;f<best;f+=10) floors.push(f);
+    floors.push(best);
+    floors.forEach(f=>{
+      const area=[...AREAS].reverse().find(a=>f>=a.minFloor)?.name??'廃都表層';
+      const btn=document.createElement('button');
+      btn.className=`btn${f===best?' primary':''}`;
+      btn.style.cssText='margin-bottom:4px;';
+      btn.textContent=`B${f}F — ${area}`;
+      btn.onclick=()=>G._doEnterDungeon(f);
+      list.appendChild(btn);
+    });
+    document.getElementById('dungeon-floor-panel').classList.add('active');
+  },
+  cancelDungeonFloor(){
+    document.getElementById('dungeon-floor-panel').classList.remove('active');
+  },
+  _doEnterDungeon(floor){
+    document.getElementById('dungeon-floor-panel').classList.remove('active');
+    STATE.floor=floor;
+    STATE.floorProgress=0;
+    saveGame();
     G.showScreen('screen-explore');
     renderExplore();
-    addLog('ダンジョンへ潜った…','system');
+    const log=document.getElementById('explore-log');
+    if(log) log.innerHTML='';
+    addLog(`B${floor}Fから探索を開始する…`,'system');
     AUDIO.playBgmExplore(STATE.floor);
   },
   surfaceFromDungeon(){
@@ -1948,11 +2017,19 @@ const G={
       renderExplore();setTimeout(()=>G._openBattle(e),800);
     }else{
       const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
+      const expGain=rand(2,4+Math.floor(STATE.floor/3));
+      STATE.party.filter(d=>d.hp>0).forEach(d=>{
+        d.exp+=expGain;
+        if(d.exp>=d.expNext){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
+      });
+      // 自動討伐: 先頭仲魔が微ダメージを受ける（HP1以下にはならない）
+      const lead=STATE.party.find(d=>d.hp>0);
+      if(lead){const autoDmg=rand(1,Math.max(1,Math.ceil(lead.maxHp*0.04)));lead.hp=Math.max(1,lead.hp-autoDmg);}
       const auto=spawnEnemy(STATE.floor);
       const drop = ITEM.tryDrop(STATE.floor);
       if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
       const slash=['⚔️','🗡️','💥','⚡','🌪️'][rand(0,4)];
-      addLog(`${slash} ${auto.name} を討伐 +${gain}₪`);
+      addLog(`${slash} ${auto.name} を討伐 +${gain}₪ EXP+${expGain}`);
       // ボスフロア接近警告: あと1戦で昇階 & 次フロアがボスの場合
       if (STATE.floorProgress === 4 && STATE.floor % 10 === 9) {
         addLog(`⚠ 次戦に勝てば B${STATE.floor + 1}F へ — ボスフロアだ！`, 'warn');
