@@ -1817,7 +1817,7 @@ const G={
   },
   surfaceFromDungeon(){
     if(STATE.exploring){showToast('探索を停止してから地上へ');return;}
-    const bonus=STATE.floor*5;
+    const bonus=STATE.floor*10;
     const bonusEl=document.getElementById('surface-bonus-text');
     if(bonusEl) bonusEl.textContent=`地上に戻ります。フロア進行はリセット。帰還ボーナス ₪${bonus}`;
     document.getElementById('surface-confirm-panel').classList.add('active');
@@ -1827,7 +1827,7 @@ const G={
   },
   _doSurface(){
     document.getElementById('surface-confirm-panel').classList.remove('active');
-    const bonus=STATE.floor*5;
+    const bonus=STATE.floor*10;
     STATE.macca+=bonus;
     STATE.floorProgress=0;
     saveGame();
