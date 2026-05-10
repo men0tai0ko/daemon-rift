@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.12.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -127,6 +127,7 @@ const STATE = {
   fusionSlot:null, fusionA:null, fusionB:null,
   _skillStoneActive:false, _guardActive:false,
   _pendingBonus:0, // ISS-009: _checkGameOver()でのみセット・startNewGame()で消費（RUNTIME）
+  _returnTo:'explore', // 仲魔一覧/合体ラボから戻る先（'explore' | 'town'）
 };
 
 // ================================================================
@@ -452,6 +453,15 @@ const ITEM = {
   },
 };
 
+// 商店マスターデータ（price: 購入価格、minFloor: 解禁フロア）
+const SHOP_MASTER = {
+  '回復薬':     { price:  80, minFloor:  1 },
+  '万能薬':     { price: 200, minFloor:  1 },
+  '守りの御札': { price: 150, minFloor:  1 },
+  'スキル石':   { price: 400, minFloor: 30 },
+  '覚醒の書':   { price: 500, minFloor: 30 },
+};
+
 // ================================================================
 // [BLOCK: SAVE] セーブ・ロード処理
 // 将来の分割先: save.js
@@ -520,6 +530,8 @@ const UI = {
     document.getElementById('btn-explore-toggle').textContent = STATE.exploring ? '⏸ 探索停止' : '▶ 探索開始';
     const fusionBtn = document.getElementById('btn-fusion-explore');
     if (fusionBtn) fusionBtn.classList.toggle('disabled', STATE.exploring);
+    const surfaceBtn = document.getElementById('btn-surface');
+    if (surfaceBtn) surfaceBtn.classList.toggle('disabled', STATE.exploring);
     const area = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor);
     document.getElementById('area-name').textContent = area?.name ?? '廃都表層';
     UI.renderPartyBar();
@@ -779,6 +791,50 @@ const UI = {
     cancel.onclick = () => overlay.remove();
     overlay.appendChild(cancel);
     document.body.appendChild(overlay);
+  },
+
+  // 拠点（町）画面を描画する
+  renderTownScreen() {
+    document.getElementById('town-macca').textContent = STATE.macca;
+    const subtitle = document.getElementById('town-subtitle');
+    if (subtitle) {
+      subtitle.textContent = STATE.bestFloor > 1
+        ? `最高到達: B${STATE.bestFloor}F — 現在 B${STATE.floor}F`
+        : STATE.floor > 1 ? `現在 B${STATE.floor}F` : '初めての潜入';
+    }
+    const innCost = Math.min(300, 50 + STATE.floor * 5);
+    const btnInn = document.getElementById('btn-inn');
+    if (btnInn) {
+      btnInn.textContent = `🛏 宿屋 ₪${innCost}`;
+      const alive = STATE.party.filter(d => d.hp > 0);
+      const cannotHeal = !alive.length || alive.every(d => d.hp >= d.maxHp) || STATE.macca < innCost;
+      btnInn.classList.toggle('disabled', cannotHeal);
+      btnInn.disabled = cannotHeal;
+    }
+    UI.renderTownPartyStrip();
+  },
+
+  // 拠点の仲魔一覧ストリップ（パーティ＋倉庫）
+  renderTownPartyStrip() {
+    const strip = document.getElementById('town-party-strip');
+    if (!strip) return;
+    strip.innerHTML = '';
+    const all = [...STATE.party, ...STATE.storage];
+    if (!all.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--muted);font-size:11px;padding:4px';
+      empty.textContent = '仲魔なし';
+      strip.appendChild(empty);
+      return;
+    }
+    all.forEach(d => {
+      const pct = Math.max(0, (d.hp / d.maxHp) * 100);
+      const bc = pct > 50 ? '' : pct > 25 ? 'low' : 'critical';
+      const card = document.createElement('div');
+      card.className = `bps-card${!d.inParty ? ' storage' : ''}${d.hp <= 0 ? ' dead' : ''}`;
+      card.innerHTML = `<div class="bps-emoji">${d.emoji}</div><div class="bps-name">${d.name}</div><div class="bps-hp ${bc}">${Math.max(0,d.hp)}/${d.maxHp}</div><div class="bps-hp-bar"><div class="bps-hp-fill ${bc}" style="width:${pct}%"></div></div>`;
+      strip.appendChild(card);
+    });
   },
 
   // 仲魔/アイテムタブを切り替える
@@ -1739,12 +1795,93 @@ const G={
     document.getElementById(id).classList.add('active');
     if(id==='screen-fusion') UI.renderFusionScreen();
     if(id==='screen-party')  UI.switchPartyTab('party');
+    if(id==='screen-town')   UI.renderTownScreen();
   },
   goFusion(){
     if(STATE.exploring){showToast('探索中は合体できない');return;}
+    STATE._returnTo='explore';
     G.showScreen('screen-fusion');
   },
-  backToExplore(){G.showScreen('screen-explore');renderExplore();},
+  backToExplore(){
+    if(STATE._returnTo==='town'){G.goTown();return;}
+    G.showScreen('screen-explore');renderExplore();
+  },
+  goTown(){ G.showScreen('screen-town'); },
+  showScreenFromTown(id){ STATE._returnTo='town'; G.showScreen(id); },
+  showScreenFromDungeon(id){ STATE._returnTo='explore'; G.showScreen(id); },
+  enterDungeon(){
+    G.showScreen('screen-explore');
+    renderExplore();
+    addLog('ダンジョンへ潜った…','system');
+    AUDIO.playBgmExplore(STATE.floor);
+  },
+  surfaceFromDungeon(){
+    if(STATE.exploring){showToast('探索を停止してから地上へ');return;}
+    const bonus=STATE.floor*5;
+    const bonusEl=document.getElementById('surface-bonus-text');
+    if(bonusEl) bonusEl.textContent=`地上に戻ります。フロア進行はリセット。帰還ボーナス ₪${bonus}`;
+    document.getElementById('surface-confirm-panel').classList.add('active');
+  },
+  cancelSurface(){
+    document.getElementById('surface-confirm-panel').classList.remove('active');
+  },
+  _doSurface(){
+    document.getElementById('surface-confirm-panel').classList.remove('active');
+    const bonus=STATE.floor*5;
+    STATE.macca+=bonus;
+    STATE.floorProgress=0;
+    saveGame();
+    addLog(`⬆ 地上に戻った（帰還ボーナス ₪+${bonus}）`,'system');
+    AUDIO.stopBgm();
+    G.goTown();
+  },
+  restAtInn(){
+    const cost=Math.min(300,50+STATE.floor*5);
+    if(STATE.macca<cost){showToast(`₪が足りない（必要: ${cost}）`);return;}
+    const alive=STATE.party.filter(d=>d.hp>0);
+    if(!alive.length){showToast('回復できる仲魔がいない');return;}
+    STATE.macca-=cost;
+    alive.forEach(d=>{d.hp=d.maxHp;});
+    saveGame();
+    showToast(`₪${cost} — パーティが全回復した`);
+    UI.renderTownScreen();
+  },
+  openShop(){
+    document.getElementById('shop-macca-display').textContent=STATE.macca;
+    const list=document.getElementById('shop-list');
+    list.innerHTML='';
+    Object.entries(SHOP_MASTER).forEach(([name,data])=>{
+      const unlocked=STATE.floor>=data.minFloor;
+      const master=ITEM.MASTER[name];
+      const qty=ITEM.count(name);
+      const maxed=qty>=master.maxStack;
+      const canBuy=unlocked&&!maxed&&STATE.macca>=data.price;
+      const btn=document.createElement('button');
+      btn.className=`btn${canBuy?'':' disabled'}`;
+      btn.style.cssText='font-size:12px;margin-bottom:4px;text-align:left;';
+      btn.textContent=unlocked
+        ?`${master.icon} ${name}  ₪${data.price}（${qty}/${master.maxStack}）— ${master.desc}`
+        :`${master.icon} ${name} — B${data.minFloor}F以降で解禁`;
+      if(canBuy) btn.onclick=()=>G.buyItem(name);
+      list.appendChild(btn);
+    });
+    document.getElementById('shop-panel').classList.add('active');
+  },
+  buyItem(name){
+    const data=SHOP_MASTER[name];
+    if(!data)return;
+    if(STATE.floor<data.minFloor){showToast(`B${data.minFloor}F以降で解禁`);return;}
+    if(STATE.macca<data.price){showToast('₪が足りない');return;}
+    const added=ITEM.add(name,1);
+    if(!added){showToast('これ以上持てない');return;}
+    STATE.macca-=data.price;
+    saveGame();
+    showToast(`${name} を購入した（₪-${data.price}）`);
+    G.openShop();
+  },
+  closeShop(){
+    document.getElementById('shop-panel').classList.remove('active');
+  },
 
   startNewGame(){
     clearInterval(STATE.exploreTimer);
@@ -1753,16 +1890,17 @@ const G={
     Object.assign(STATE,{floor:1,macca:100,kills:0,fusions:0,bestFloor:1,
       floorProgress:0,exploring:false,exploreTimer:null,
       party:[],storage:[],fusionA:null,fusionB:null,items:{},legacyMacca:0,_pendingBonus:0,
-      _skillStoneActive:false,_guardActive:false,_fusionConfirm:false});
+      _skillStoneActive:false,_guardActive:false,_fusionConfirm:false,_returnTo:'explore'});
     // ISS-009: 引継マッカを初期マッカに加算
     STATE.macca += bonus;
     const s=createDemon(1,1);s.inParty=true;
     STATE.party=[s];STATE.storage=[createDemon(4,2)];
-    updateBestFloor();G.showScreen('screen-explore');renderExplore();
+    updateBestFloor();
     addLog('新たな探索者が廃都へ踏み込んだ…','system');
     addLog(`初期仲魔：${s.name} を連れている`,'success');
     // ISS-009: 引継ボーナスがある場合のみログに表示
     if (bonus > 0) addLog(`前回の記憶から ₪${bonus} を引き継いだ`, 'system');
+    G.goTown();
   },
 
   continueGame(){
@@ -1784,8 +1922,8 @@ const G={
       G.showScreen('screen-gameover');
       return;
     }
-    G.showScreen('screen-explore');renderExplore();
     addLog('探索を再開した…','system');
+    G.goTown();
   },
 
   toggleExplore(){
