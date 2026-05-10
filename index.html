@@ -1,7 +1,7 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.12.0
+  Version : 0.13.0
   Updated : 2026-05-10
   Author  : ののやま
 ================================================================
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.12.0">
+<meta name="version" content="0.13.0">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -27,9 +27,13 @@
         <div class="town-title">廃都の入口</div>
         <div class="town-subtitle" id="town-subtitle">初めての潜入</div>
       </div>
-      <div class="macca-display">₪ <span id="town-macca">0</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="macca-display">₪ <span id="town-macca">0</span></div>
+        <button class="btn" id="btn-town-mute" onclick="AUDIO.toggleMute();this.textContent=AUDIO.isMuted?'🔇':'🔊'" style="padding:8px 10px;font-size:11px;">🔊</button>
+      </div>
     </div>
     <div class="town-party-strip" id="town-party-strip"></div>
+    <div class="town-item-strip" id="town-item-strip"></div>
     <div class="town-actions">
       <button class="btn primary town-btn" onclick="G.enterDungeon()">▼ ダンジョンへ潜る</button>
       <div class="town-row">
@@ -45,6 +49,11 @@
       <div class="negotiate-title">▌ 商店 — 所持 ₪<span id="shop-macca-display">0</span></div>
       <div class="negotiate-opts" id="shop-list"></div>
       <button class="btn" style="margin-top:4px;" onclick="G.closeShop()">✕ 閉じる</button>
+    </div>
+    <div class="negotiate-panel" id="dungeon-floor-panel">
+      <div class="negotiate-title">▌ 潜入階層を選べ（クリア済: B<span id="dungeon-best-floor">1</span>F）</div>
+      <div class="negotiate-opts" id="dungeon-floor-list"></div>
+      <button class="btn" style="margin-top:4px;" onclick="G.cancelDungeonFloor()">✕ キャンセル</button>
     </div>
   </div>
 
