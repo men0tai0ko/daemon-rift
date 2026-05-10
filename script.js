@@ -225,6 +225,13 @@ function calcFleeRate(lead, enemy){
   return Math.min(0.9,Math.max(0.2,base+diff*0.03));
 }
 
+// 宿屋費用: 生存パーティ仲魔の不足HP合計（1₪/HP、最低10₪）
+function calcInnCost(){
+  const alive=STATE.party.filter(d=>d.hp>0);
+  const totalHeal=alive.reduce((s,d)=>s+(d.maxHp-d.hp),0);
+  return Math.max(10,totalHeal);
+}
+
 
 // ================================================================
 // [BLOCK: SKILL] スキル定義・発動判定・継承
@@ -718,7 +725,7 @@ const UI = {
       el.className = `demon-card-full ${d.inParty ? 'in-party' : ''} ${!d.inParty && d.hp <= 0 ? 'hp-zero' : ''}`;
       // ISS-018: 倉庫悪魔かつパーティ満員時はボタンをdisabled化
       const btnDisabled = !d.inParty && partyFull ? ' disabled' : '';
-      const hpZeroNote = !d.inParty && d.hp <= 0 ? '<div style="font-size:10px;color:var(--red);margin-top:2px">宿屋でHP回復が必要</div>' : '';
+      const hpZeroNote = !d.inParty && d.hp <= 0 ? '<div style="font-size:10px;color:var(--red);margin-top:2px">覚醒の書で蘇生が必要</div>' : '';
       const isLead = lead && d.uid === lead.uid;
       const partyIdx = STATE.party.indexOf(d);
       // パーティ内隊列変更ボタン（上下矢印）
@@ -816,7 +823,7 @@ const UI = {
     const muteBtn = document.getElementById('btn-town-mute');
     if (muteBtn) muteBtn.textContent = AUDIO.isMuted ? '🔇' : '🔊';
     // 宿屋ボタン（無効理由を明示）
-    const innCost = Math.min(300, 50 + STATE.floor * 5);
+    const innCost = calcInnCost();
     const btnInn = document.getElementById('btn-inn');
     if (btnInn) {
       const alive = STATE.party.filter(d => d.hp > 0);
@@ -1926,10 +1933,11 @@ const G={
     G.goTown();
   },
   restAtInn(){
-    const cost=Math.min(300,50+STATE.floor*5);
-    if(STATE.macca<cost){showToast(`₪が足りない（必要: ${cost}）`);return;}
     const alive=STATE.party.filter(d=>d.hp>0);
     if(!alive.length){showToast('回復できる仲魔がいない');return;}
+    if(alive.every(d=>d.hp>=d.maxHp)){showToast('全員HP満タンだ');return;}
+    const cost=calcInnCost();
+    if(STATE.macca<cost){showToast(`₪が足りない（必要: ₪${cost}）`);return;}
     STATE.macca-=cost;
     alive.forEach(d=>{d.hp=d.maxHp;});
     saveGame();
