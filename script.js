@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -518,6 +518,8 @@ const UI = {
     document.getElementById('progress-label-num').textContent = `${STATE.floorProgress} / 5`;
     document.getElementById('progress-label-text').textContent = STATE.floor % 10 === 0 ? '⚠ ボスフロア' : 'フロア進行';
     document.getElementById('btn-explore-toggle').textContent = STATE.exploring ? '⏸ 探索停止' : '▶ 探索開始';
+    const fusionBtn = document.getElementById('btn-fusion-explore');
+    if (fusionBtn) fusionBtn.classList.toggle('disabled', STATE.exploring);
     const area = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor);
     document.getElementById('area-name').textContent = area?.name ?? '廃都表層';
     UI.renderPartyBar();
@@ -730,8 +732,10 @@ const UI = {
     });
   },
 
-  // アイテムを使用して画面を更新する（探索画面でない場合はログへ）
+  // アイテムを使用（対象選択が必要なものはモーダル表示）
   _useItem(itemName) {
+    const NEEDS_TARGET = ['回復薬', '万能薬', '覚醒の書'];
+    if (NEEDS_TARGET.includes(itemName)) { UI._showItemTargetSelect(itemName); return; }
     const result = ITEM.use(itemName);
     if (!result.ok) { showToast(result.msg); return; }
     addLog(`🎒 ${result.msg}`, 'success');
@@ -739,6 +743,42 @@ const UI = {
     saveGame();
     UI.renderItemScreen();
     UI.renderPartyBar();
+  },
+
+  // 仲魔一覧画面でのアイテム対象選択モーダル
+  _showItemTargetSelect(itemName) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;z-index:1000;overflow-y:auto;';
+    const title = document.createElement('div');
+    title.style.cssText = 'color:var(--cyan);font-size:13px;margin-bottom:12px;letter-spacing:2px;';
+    title.textContent = `${ITEM.MASTER[itemName]?.icon ?? ''} ${itemName} — 対象を選択`;
+    overlay.appendChild(title);
+    const all = [...STATE.party, ...STATE.storage];
+    all.forEach(d => {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.style.cssText = 'width:100%;max-width:380px;margin-bottom:8px;text-align:left;';
+      const pct = Math.round((d.hp / d.maxHp) * 100);
+      btn.textContent = `${d.emoji} ${d.name} Lv${d.lv}  HP:${d.hp}/${d.maxHp} (${pct}%) ${d.inParty ? '[PARTY]' : '[倉庫]'}`;
+      btn.onclick = () => {
+        const result = ITEM.use(itemName, d);
+        if (!result.ok) { showToast(result.msg); return; }
+        addLog(`🎒 ${result.msg}`, 'success');
+        showToast(result.msg);
+        saveGame();
+        overlay.remove();
+        UI.renderItemScreen();
+        UI.renderPartyBar();
+      };
+      overlay.appendChild(btn);
+    });
+    const cancel = document.createElement('button');
+    cancel.className = 'btn warn';
+    cancel.style.cssText = 'width:100%;max-width:380px;margin-top:4px;';
+    cancel.textContent = '✕ キャンセル';
+    cancel.onclick = () => overlay.remove();
+    overlay.appendChild(cancel);
+    document.body.appendChild(overlay);
   },
 
   // 仲魔/アイテムタブを切り替える
@@ -1192,37 +1232,42 @@ const BATTLE = {
   },
 
   skill() {
-    const lead = STATE.party.find(d => d.hp > 0);
-    if (!lead || !STATE.currentEnemy || !lead.skills.length) return;
-    if (lead.skills.length === 1) {
-      BATTLE._executeSkill(lead.skills[0]);
-    } else {
-      BATTLE.startSkillPanel();
-    }
+    const alive = STATE.party.filter(d => d.hp > 0 && d.skills.length > 0);
+    if (!alive.length || !STATE.currentEnemy) return;
+    BATTLE.startSkillPanel();
   },
 
-  // スキル選択パネルを開く（2スキル以上の仲魔用）
+  // スキル選択パネルを開く（全生存仲魔のスキルを表示）
   startSkillPanel() {
     if (!STATE.inBattle) return;
-    const lead = STATE.party.find(d => d.hp > 0);
-    if (!lead) return;
+    const alive = STATE.party.filter(d => d.hp > 0);
+    if (!alive.length) return;
+    const e2 = STATE.currentEnemy;
     const list = document.getElementById('skill-panel-list');
     list.innerHTML = '';
-    const e2 = STATE.currentEnemy;
-    lead.skills.forEach(skillName => {
-      const s = SKILL.MASTER[skillName];
-      const typeLabel = {attack:'攻撃',heal:'回復',debuff:'弱体',special:'特殊'}[s?.type] ?? '';
-      let dmgHint = '';
-      if (s?.type === 'attack' && lead && e2) {
-        const aff = AFFINITY[s.attr]?.[e2.attr] ?? 1;
-        const base = Math.floor(calcDamage(lead, e2) * (s.power ?? 1) * aff);
-        dmgHint = ` 推定${Math.floor(base * 0.85)}〜${Math.floor(base * 1.15)}`;
-      }
-      const btn = document.createElement('button');
-      btn.className = 'btn';
-      btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}${dmgHint}）`;
-      btn.onclick = () => G.doSkillSelect(skillName);
-      list.appendChild(btn);
+    alive.forEach(demon => {
+      if (!demon.skills.length) return;
+      // 仲魔ヘッダー
+      const header = document.createElement('div');
+      header.style.cssText = 'font-size:10px;color:var(--cyan);margin:6px 0 3px;letter-spacing:1px;';
+      header.textContent = `${demon.emoji} ${demon.name} (HP:${demon.hp}/${demon.maxHp})`;
+      list.appendChild(header);
+      demon.skills.forEach(skillName => {
+        const s = SKILL.MASTER[skillName];
+        const typeLabel = {attack:'攻撃',heal:'回復',debuff:'弱体',special:'特殊'}[s?.type] ?? '';
+        let dmgHint = '';
+        if (s?.type === 'attack' && e2) {
+          const aff = AFFINITY[s.attr]?.[e2.attr] ?? 1;
+          const base = Math.floor(calcDamage(demon, e2) * (s.power ?? 1) * aff);
+          dmgHint = ` 推定${Math.floor(base * 0.85)}〜${Math.floor(base * 1.15)}`;
+        }
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.style.cssText = 'margin-bottom:4px;font-size:11px;';
+        btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}${dmgHint}）`;
+        btn.onclick = () => G.doSkillSelect(skillName, demon.uid);
+        list.appendChild(btn);
+      });
     });
     document.getElementById('skill-panel').classList.add('active');
     document.getElementById('battle-actions').style.display = 'none';
@@ -1233,9 +1278,12 @@ const BATTLE = {
     document.getElementById('battle-actions').style.display = '';
   },
 
-  // 指定スキルを実行する（1スキル直接使用 / パネル選択の両経路から呼ばれる）
-  _executeSkill(skillName) {
-    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
+  // 指定スキルを実行する（performerUid: スキル使用仲魔のuid、省略時は先頭）
+  _executeSkill(skillName, performerUid = null) {
+    const e = STATE.currentEnemy;
+    const lead = performerUid
+      ? STATE.party.find(d => d.uid == performerUid && d.hp > 0)
+      : STATE.party.find(d => d.hp > 0);
     if (!lead || !e) return;
     document.getElementById('skill-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
@@ -1331,11 +1379,17 @@ const BATTLE = {
     }
   },
 
+  // 戦死した仲魔をパーティから倉庫へ自動移動する
+  _removeDeadFromParty() {
+    const dead = STATE.party.filter(d => d.hp <= 0);
+    dead.forEach(d => { d.inParty = false; STATE.storage.push(d); });
+    STATE.party = STATE.party.filter(d => d.hp > 0);
+  },
+
   _enemyAttack() {
     const e = STATE.currentEnemy;
-    const alive = STATE.party.filter(d => d.hp > 0);
-    if (!alive.length) { BATTLE._checkGameOver(); return; }
-    const t = alive[Math.floor(Math.random() * alive.length)];
+    if (!STATE.party.length) { BATTLE._checkGameOver(); return; }
+    const t = STATE.party[Math.floor(Math.random() * STATE.party.length)];
     const dmg = calcDamage(e, t);
     if (STATE._guardActive) {
       STATE._guardActive = false;
@@ -1347,14 +1401,23 @@ const BATTLE = {
     t.hp = Math.max(0, t.hp - dmg);
     AUDIO.seHit();
     setBattleLog(`${e.name} → ${t.name} ${dmg}ダメ`, 'enemy');
-    renderPartyBar(); UI.renderBattlePartyStrip();
     if (t.hp <= 0) {
       setBattleLog(`${t.name} は倒れた…`, 'enemy');
-      if (STATE.party.every(d => d.hp <= 0)) {
-        // ISS-016: 全滅確定時にアクションボタンを即座に非表示にして連打を防止
+      BATTLE._removeDeadFromParty();
+      renderPartyBar(); UI.renderBattlePartyStrip();
+      if (STATE.party.length === 0) {
         document.getElementById('battle-actions').style.display = 'none';
         setTimeout(() => BATTLE._checkGameOver(), 1000);
+        return;
       }
+      // 新しいリード仲魔に合わせてスキルボタン・属性ヒントを更新
+      const newLead = STATE.party[0];
+      const skillBtn = document.getElementById('btn-skill');
+      if (newLead?.skills?.length) { skillBtn.classList.remove('disabled'); skillBtn.disabled = false; }
+      else { skillBtn.classList.add('disabled'); skillBtn.disabled = true; }
+      UI.updateAffinityHint();
+    } else {
+      renderPartyBar(); UI.renderBattlePartyStrip();
     }
   },
 
@@ -1389,7 +1452,7 @@ const BATTLE = {
   },
 
   _checkGameOver() {
-    if (!STATE.party.every(d => d.hp <= 0)) return;
+    if (STATE.party.length > 0) return; // 生存仲魔がいれば続行
     clearInterval(STATE.exploreTimer);
     STATE.inBattle = STATE.exploring = false;
     // ISS-009: legacyMacca を計算してから saveGame() を呼ぶこと（順序厳守）
@@ -1410,13 +1473,11 @@ const BATTLE = {
 
   // アイテムパネルを開く（使用可能アイテムを動的生成）
   startItemPanel() {
-    // 問題4: 戦闘中以外（敵ターンのsetTimeout到達後など）は開かない
     if (!STATE.inBattle) return;
-    // 戦闘中に使用可能なアイテム種別
     const BATTLE_USABLE = ['回復薬', '万能薬', '守りの御札'];
+    const NEEDS_TARGET = ['回復薬', '万能薬']; // 対象選択が必要なアイテム
     const list = document.getElementById('item-panel-list');
     list.innerHTML = '';
-    // 問題5: 使用可能アイテムが1件もない場合はパネルを開かずトーストのみ
     const hasAny = BATTLE_USABLE.some(name => ITEM.count(name) > 0);
     if (!hasAny) { showToast('使えるアイテムがない'); return; }
     BATTLE_USABLE.forEach(name => {
@@ -1425,8 +1486,13 @@ const BATTLE = {
       btn.className = `btn${qty <= 0 ? ' disabled' : ''}`;
       const master = ITEM.MASTER[name];
       btn.textContent = `${master.icon} ${name}（${qty}）`;
-      // 問題3: メソッド名を applyBattleItem に統一
-      if (qty > 0) btn.onclick = () => G.doBattleItem(name);
+      if (qty > 0) {
+        if (NEEDS_TARGET.includes(name)) {
+          btn.onclick = () => BATTLE.startItemTargetPanel(name);
+        } else {
+          btn.onclick = () => G.doBattleItem(name);
+        }
+      }
       list.appendChild(btn);
     });
     document.getElementById('item-panel').classList.add('active');
@@ -1439,22 +1505,48 @@ const BATTLE = {
     document.getElementById('battle-actions').style.display = '';
   },
 
-  // パーティ交代パネルを開く（パーティ内 + 倉庫から選択可能）
+  // 回復系アイテムの対象選択パネルを開く
+  startItemTargetPanel(itemName) {
+    document.getElementById('item-panel').classList.remove('active');
+    const list = document.getElementById('item-target-list');
+    list.innerHTML = '';
+    const master = ITEM.MASTER[itemName];
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:10px;color:var(--muted);margin-bottom:6px;';
+    header.textContent = `${master?.icon ?? ''} ${itemName} — 対象を選択`;
+    list.appendChild(header);
+    STATE.party.forEach(d => {
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      const pct = Math.round((d.hp / d.maxHp) * 100);
+      btn.textContent = `${d.emoji} ${d.name}  HP:${d.hp}/${d.maxHp} (${pct}%)`;
+      btn.onclick = () => G.doBattleItemWithTarget(itemName, d.uid);
+      list.appendChild(btn);
+    });
+    document.getElementById('item-target-panel').classList.add('active');
+    document.getElementById('battle-actions').style.display = 'none';
+  },
+
+  // アイテム対象選択パネルを閉じる
+  cancelItemTargetPanel() {
+    document.getElementById('item-target-panel').classList.remove('active');
+    document.getElementById('battle-actions').style.display = '';
+  },
+
+  // パーティ交代パネルを開く（パーティ内 + 空き枠があれば倉庫から加勢）
   openPartySwap() {
     if (!STATE.inBattle) return;
-    const lead = STATE.party.find(d => d.hp > 0);
-    const aliveParty = STATE.party.filter(d => d.hp > 0 && d.uid !== lead?.uid);
-    const hasDead = STATE.party.some(d => d.hp <= 0);
-    const storageList = hasDead ? STATE.storage : [];
-    if (!aliveParty.length && !storageList.length) { showToast('交代できる仲魔がいない'); return; }
+    const others = STATE.party.slice(1); // 先頭以外のパーティメンバー
+    const canAdd = STATE.party.length < 3 && STATE.storage.length > 0;
+    if (!others.length && !canAdd) { showToast('交代できる仲魔がいない'); return; }
     const list = document.getElementById('party-swap-list');
     list.innerHTML = '';
-    if (aliveParty.length) {
+    if (others.length) {
       const lbl = document.createElement('div');
       lbl.style.cssText = 'font-size:9px;color:var(--cyan);margin-bottom:4px;letter-spacing:1px';
-      lbl.textContent = '▌ パーティ内交代';
+      lbl.textContent = '▌ 先頭を交代';
       list.appendChild(lbl);
-      aliveParty.forEach(d => {
+      others.forEach(d => {
         const btn = document.createElement('button');
         btn.className = 'btn';
         btn.textContent = `${d.emoji} ${d.name} Lv${d.lv}  HP ${d.hp}/${d.maxHp}`;
@@ -1462,12 +1554,12 @@ const BATTLE = {
         list.appendChild(btn);
       });
     }
-    if (storageList.length) {
+    if (canAdd) {
       const lbl = document.createElement('div');
       lbl.style.cssText = 'font-size:9px;color:var(--orange);margin:6px 0 4px;letter-spacing:1px';
-      lbl.textContent = '▌ 倉庫から呼び出す（戦死枠と交代）';
+      lbl.textContent = '▌ 倉庫から加勢（空き枠に追加）';
       list.appendChild(lbl);
-      storageList.forEach(d => {
+      STATE.storage.forEach(d => {
         const btn = document.createElement('button');
         btn.className = 'btn';
         btn.textContent = `${d.emoji} ${d.name} Lv${d.lv}  HP ${d.hp}/${d.maxHp}`;
@@ -1499,23 +1591,19 @@ const BATTLE = {
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
 
-  // 倉庫の仲魔を戦闘中に呼び出し、戦死した仲魔と交代させる
+  // 倉庫の仲魔を戦闘中に加勢させる（空きパーティ枠に追加）
   doStorageSwap(uid) {
     const d = STATE.storage.find(x => x.uid === uid);
     if (!d) return;
-    const deadIdx = STATE.party.findIndex(x => x.hp <= 0);
-    if (deadIdx < 0) { showToast('パーティに戦死枠がない'); return; }
-    const dead = STATE.party[deadIdx];
-    dead.inParty = false;
-    STATE.storage.push(dead);
+    if (STATE.party.length >= 3) { showToast('パーティが満員'); return; }
     STATE.storage = STATE.storage.filter(x => x.uid !== uid);
     d.inParty = true;
-    STATE.party.splice(deadIdx, 1);
-    STATE.party.unshift(d);
+    STATE.party.push(d);
     document.getElementById('party-swap-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
+    const lead = STATE.party[0];
     const skillBtn = document.getElementById('btn-skill');
-    if (d.skills?.length) { skillBtn.classList.remove('disabled'); skillBtn.disabled = false; }
+    if (lead?.skills?.length) { skillBtn.classList.remove('disabled'); skillBtn.disabled = false; }
     else { skillBtn.classList.add('disabled'); skillBtn.disabled = true; }
     UI.renderBattlePartyStrip();
     UI.updateAffinityHint();
@@ -1524,17 +1612,16 @@ const BATTLE = {
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
 
-  // 問題3: useItem → applyBattleItem にリネーム（UI._useItem との混在を解消）
-  // 戦闘中アイテム使用（ITEM.use() 経由・使用後に敵ターンを発生させる）
-  applyBattleItem(itemName) {
-    const result = ITEM.use(itemName);
+  // 戦闘中アイテム使用（targetUid指定で対象を選択可能）
+  applyBattleItem(itemName, targetUid = null) {
+    const target = targetUid ? STATE.party.find(d => d.uid == targetUid) : null;
+    const result = ITEM.use(itemName, target);
     if (!result.ok) { showToast(result.msg); return; }
     setBattleLog(`🎒 ${result.msg}`, 'player');
     saveGame();
     renderPartyBar(); UI.renderBattlePartyStrip();
     BATTLE.cancelItemPanel();
-    // 問題1: アイテム使用をターン消費とし敵の反撃を発生させる
-    // 問題2: 御札もここで敵ターンを呼ぶことでフラグ→即発動の流れになる
+    BATTLE.cancelItemTargetPanel();
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
 };
@@ -1548,22 +1635,34 @@ const BATTLE = {
 // ================================================================
 const FUSION = {
 
+  // スロットをタップ：選択中なら解除、空なら選択モードに
   selectSlot(slot) {
+    if (slot === 'a' && STATE.fusionA) { STATE.fusionA = null; renderFusionScreen(); return; }
+    if (slot === 'b' && STATE.fusionB) { STATE.fusionB = null; renderFusionScreen(); return; }
     STATE.fusionSlot = slot;
     renderFusionScreen();
   },
 
+  // 仲魔をタップ：1体目→A、2体目→B、選択済み→解除、両方埋まり→Aを置換
   selectDemon(uid) {
     const d = [...STATE.party, ...STATE.storage].find(x => x.uid === uid);
     if (!d) return;
+    // 既に選択済みなら解除
+    if (STATE.fusionA?.uid === uid) { STATE.fusionA = null; STATE.fusionSlot = null; renderFusionScreen(); return; }
+    if (STATE.fusionB?.uid === uid) { STATE.fusionB = null; STATE.fusionSlot = null; renderFusionScreen(); return; }
+    // スロット明示指定モード
     if (STATE.fusionSlot === 'a') {
       if (STATE.fusionB?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
-      STATE.fusionA = d;
-    } else {
-      if (STATE.fusionA?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
-      STATE.fusionB = d;
+      STATE.fusionA = d; STATE.fusionSlot = null; renderFusionScreen(); return;
     }
-    STATE.fusionSlot = null;
+    if (STATE.fusionSlot === 'b') {
+      if (STATE.fusionA?.uid === uid) { showToast('同じ悪魔は選べない'); return; }
+      STATE.fusionB = d; STATE.fusionSlot = null; renderFusionScreen(); return;
+    }
+    // 自動割り当て：A→B→Aを置換の順
+    if (!STATE.fusionA) { STATE.fusionA = d; }
+    else if (!STATE.fusionB) { STATE.fusionB = d; }
+    else { STATE.fusionA = d; } // 両方埋まり→Aを置換
     renderFusionScreen();
   },
 
@@ -1616,6 +1715,7 @@ const FUSION = {
     const d = all.find(x => x.uid == uid);
     if (!d) return;
     if (d.inParty) {
+      if (STATE.party.length <= 1) { showToast('パーティに最低1体必要'); return; }
       d.inParty = false;
       STATE.party = STATE.party.filter(x => x.uid != uid);
       STATE.storage.push(d);
@@ -1639,6 +1739,10 @@ const G={
     document.getElementById(id).classList.add('active');
     if(id==='screen-fusion') UI.renderFusionScreen();
     if(id==='screen-party')  UI.switchPartyTab('party');
+  },
+  goFusion(){
+    if(STATE.exploring){showToast('探索中は合体できない');return;}
+    G.showScreen('screen-fusion');
   },
   backToExplore(){G.showScreen('screen-explore');renderExplore();},
 
@@ -1669,7 +1773,8 @@ const G={
     if(!STATE.items) STATE.items={};
     STATE.exploring=false;
     // 全滅セーブのロード時はゲームオーバー画面へ誘導（探索画面に閉じ込め防止）
-    if(STATE.party.length>0 && STATE.party.every(d=>d.hp<=0)){
+    // v0.11.0以降: 戦死した仲魔は自動的に倉庫へ移動するため party.length===0 が全滅状態
+    if(STATE.party.length===0 || (STATE.party.length>0 && STATE.party.every(d=>d.hp<=0))){
       STATE._pendingBonus=STATE.legacyMacca;
       document.getElementById('go-floor').textContent   =`B${STATE.floor}F`;
       document.getElementById('go-best').textContent    =`B${STATE.bestFloor}F`;
@@ -1742,10 +1847,12 @@ const G={
   startItemPanel(){ BATTLE.startItemPanel(); },
   cancelItemPanel(){ BATTLE.cancelItemPanel(); },
   doBattleItem(name){ BATTLE.applyBattleItem(name); },
+  doBattleItemWithTarget(name, uid){ BATTLE.applyBattleItem(name, uid); },
+  cancelItemTargetPanel(){ BATTLE.cancelItemTargetPanel(); },
   // スキルパネル委譲
   startSkillPanel(){ BATTLE.startSkillPanel(); },
   cancelSkillPanel(){ BATTLE.cancelSkillPanel(); },
-  doSkillSelect(skillName){ BATTLE._executeSkill(skillName); },
+  doSkillSelect(skillName, performerUid){ BATTLE._executeSkill(skillName, performerUid); },
   // パーティ交代委譲
   openPartySwap(){ BATTLE.openPartySwap(); },
   cancelPartySwap(){ BATTLE.cancelPartySwap(); },
