@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.10.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -493,7 +493,11 @@ function loadGame(){
 function updateBestFloor(){
   if(STATE.floor>STATE.bestFloor)STATE.bestFloor=STATE.floor;
   const prev=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
-  if(STATE.bestFloor>prev)localStorage.setItem(LS_KEY_BEST,STATE.bestFloor);
+  if(STATE.bestFloor>prev){
+    localStorage.setItem(LS_KEY_BEST,STATE.bestFloor);
+    const el=document.getElementById('title-record');
+    if(el)el.textContent=`最高到達: B${STATE.bestFloor}F`;
+  }
 }
 
 // ================================================================
@@ -543,15 +547,15 @@ const UI = {
   renderEnemyHP() {
     const e = STATE.currentEnemy, p = Math.max(0, (e.hp / e.maxHp) * 100);
     document.getElementById('enemy-hp-bar').style.width = `${p}%`;
-    document.getElementById('enemy-hp-text').textContent = `HP: ${Math.max(0, e.hp)} / ${e.maxHp}`;
+    document.getElementById('enemy-hp-text').textContent = `HP: ${Math.max(0, e.hp)} / ${e.maxHp} (${Math.round(p)}%)`;
   },
 
   // 戦闘ログを更新する（直近3行を保持・古い行はフェード）
-  setBattleLog(msg) {
+  setBattleLog(msg, type = '') {
     const el = document.getElementById('battle-log');
     el.querySelectorAll('.battle-log-line').forEach(l => l.classList.add('old'));
     const div = document.createElement('div');
-    div.className = 'battle-log-line';
+    div.className = `battle-log-line${type ? ' ' + type : ''}`;
     div.textContent = msg;
     el.appendChild(div);
     const lines = el.querySelectorAll('.battle-log-line');
@@ -619,6 +623,9 @@ const UI = {
 
   // 合体ラボ画面を描画する
   renderFusionScreen() {
+    STATE._fusionConfirm = false;
+    const execBtnReset = document.getElementById('btn-fusion-exec');
+    if (execBtnReset) { execBtnReset.textContent = '⚡ 合体実行'; execBtnReset.classList.remove('warn'); }
     const { fusionA: sA, fusionB: sB } = STATE;
     const fillSlot = (side, d) => {
       const el = document.getElementById(`fusion-slot-${side}`);
@@ -626,7 +633,7 @@ const UI = {
         el.classList.add('filled');
         document.getElementById(`fusion-slot-${side}-emoji`).textContent = d.emoji;
         document.getElementById(`fusion-slot-${side}-name`).textContent = d.name;
-        document.getElementById(`fusion-slot-${side}-info`).textContent = `Lv${d.lv} ${d.race}`;
+        document.getElementById(`fusion-slot-${side}-info`).textContent = `Lv${d.lv} ${d.race} HP:${d.hp}/${d.maxHp}`;
       } else {
         el.classList.remove('filled');
         document.getElementById(`fusion-slot-${side}-emoji`).textContent = '＋';
@@ -668,7 +675,7 @@ const UI = {
       const isA = STATE.fusionA?.uid === d.uid, isB = STATE.fusionB?.uid === d.uid;
       const el = document.createElement('div');
       el.className = `fusion-demon-item ${(isA || isB) ? 'selected' : ''}`;
-      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span>${d.inParty ? ' <span class="tag party-tag">PARTY</span>' : ''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA ? '[A]' : isB ? '[B]' : ''}</div>`;
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name} <span style="color:var(--muted);font-size:10px">Lv${d.lv}</span></div><div class="ddetail">${d.race} / <span class="tag attr-${d.attr}" style="font-size:10px;padding:1px 6px">${d.attr}</span> HP:${d.hp}/${d.maxHp}${d.inParty ? ' <span class="tag party-tag">PARTY</span>' : ''}</div><div class="dskill">${d.skills.join(' / ')}</div></div><div style="font-size:10px;color:var(--muted)">${isA ? '[A]' : isB ? '[B]' : ''}</div>`;
       el.onclick = () => G.selectFusionDemon(d.uid);
       list.appendChild(el);
     });
@@ -692,7 +699,7 @@ const UI = {
       const partyIdx = STATE.party.indexOf(d);
       // パーティ内隊列変更ボタン（上下矢印）
       const reorderHtml = d.inParty ? `<div style="display:flex;flex-direction:column;gap:3px;margin-right:6px"><button class="btn${partyIdx === 0 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyUp('${d.uid}')" ${partyIdx === 0 ? 'disabled' : ''}>↑</button><button class="btn${partyIdx === STATE.party.length - 1 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyDown('${d.uid}')" ${partyIdx === STATE.party.length - 1 ? 'disabled' : ''}>↓</button></div>` : '';
-      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd} ／ EXP:${d.exp}/${d.expNext}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div></div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
       content.appendChild(el);
     });
     // ISS-012: 倉庫0体時に空表示を追加
@@ -760,7 +767,7 @@ const UI = {
 function renderExplore()      { UI.renderExplore(); }
 function renderPartyBar()     { UI.renderPartyBar(); }
 function renderEnemyHP()      { UI.renderEnemyHP(); }
-function setBattleLog(msg)    { UI.setBattleLog(msg); }
+function setBattleLog(msg, type='') { UI.setBattleLog(msg, type); }
 function addLog(msg, type='') { UI.addLog(msg, type); }
 function playEnemyHitAnim()   { UI.playEnemyHitAnim(); }
 function renderFusionScreen() { UI.renderFusionScreen(); }
@@ -1138,7 +1145,7 @@ const BATTLE = {
     document.getElementById('battle-macca-display').textContent = STATE.macca;
     document.getElementById('battle-log').innerHTML = '';
     renderEnemyHP();
-    setBattleLog(`${enemy.name} が立ちはだかる！`);
+    setBattleLog(`${enemy.name} が立ちはだかる！`, 'enemy');
     document.getElementById('negotiate-panel').classList.remove('active');
     document.getElementById('item-panel').classList.remove('active');
     document.getElementById('skill-panel').classList.remove('active');
@@ -1161,17 +1168,23 @@ const BATTLE = {
   },
 
   attack() {
-    const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
-    if (!lead || !e) return;
-    const dmg = calcDamage(lead, e);
-    e.hp -= dmg;
-    const aff = AFFINITY[lead.attr]?.[e.attr] ?? 1;
-    let msg = `${lead.name}の攻撃！ ${dmg}ダメージ`;
-    if (aff >= 2) msg += '（弱点！）'; else if (aff <= 0.5) msg += '（耐性あり）';
-    setBattleLog(msg);
+    const e = STATE.currentEnemy;
+    if (!e) return;
+    const alive = STATE.party.filter(d => d.hp > 0);
+    if (!alive.length) return;
+    const lines = [];
+    let anyWeakness = false;
+    alive.forEach((d, i) => {
+      const dmg = calcDamage(d, e);
+      e.hp = Math.max(0, e.hp - dmg);
+      const aff = AFFINITY[d.attr]?.[e.attr] ?? 1;
+      if (aff >= 2) anyWeakness = true;
+      if (i === 0) ANIM.floatDamage(dmg, aff >= 2); // float only for lead hit
+      lines.push(`${d.name} ${dmg}${aff >= 2 ? '(弱!)' : aff <= 0.5 ? '(耐)' : ''}`);
+    });
     AUDIO.seAttack();
-    if (aff >= 2) { AUDIO.seWeakness(); ANIM.weaknessFlash(); } else { ANIM.attackFlash(lead.attr); }
-    ANIM.floatDamage(dmg, aff >= 2);
+    if (anyWeakness) { AUDIO.seWeakness(); ANIM.weaknessFlash(); } else { ANIM.attackFlash(alive[0].attr); }
+    setBattleLog(`⚔ ${lines.join(' / ')}`, 'player');
     playEnemyHitAnim();
     renderEnemyHP();
     if (e.hp <= 0) { BATTLE._enemyDefeated(); return; }
@@ -1195,12 +1208,19 @@ const BATTLE = {
     if (!lead) return;
     const list = document.getElementById('skill-panel-list');
     list.innerHTML = '';
+    const e2 = STATE.currentEnemy;
     lead.skills.forEach(skillName => {
       const s = SKILL.MASTER[skillName];
       const typeLabel = {attack:'攻撃',heal:'回復',debuff:'弱体',special:'特殊'}[s?.type] ?? '';
+      let dmgHint = '';
+      if (s?.type === 'attack' && lead && e2) {
+        const aff = AFFINITY[s.attr]?.[e2.attr] ?? 1;
+        const base = Math.floor(calcDamage(lead, e2) * (s.power ?? 1) * aff);
+        dmgHint = ` 推定${Math.floor(base * 0.85)}〜${Math.floor(base * 1.15)}`;
+      }
       const btn = document.createElement('button');
       btn.className = 'btn';
-      btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}）`;
+      btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}${dmgHint}）`;
       btn.onclick = () => G.doSkillSelect(skillName);
       list.appendChild(btn);
     });
@@ -1220,7 +1240,7 @@ const BATTLE = {
     document.getElementById('skill-panel').classList.remove('active');
     document.getElementById('battle-actions').style.display = '';
     const result = SKILL.activate(lead, e, skillName);
-    UI.setBattleLog(result.msg);
+    UI.setBattleLog(`${lead.name}: ${result.msg}`, 'player');
     AUDIO.seAttack();
     if (result.effect === 'weakness') { AUDIO.seWeakness(); ANIM.weaknessFlash(); }
     else { ANIM.attackFlash(lead.attr); }
@@ -1241,14 +1261,14 @@ const BATTLE = {
     if (chance(0.6)) {
       STATE.inBattle = false;
       AUDIO.seFlee();
-      setBattleLog('うまく逃げ切った！');
+      setBattleLog('うまく逃げ切った！', 'system');
       setTimeout(() => {
         addLog('戦闘から逃げた', 'warn');
         saveGame(); // ISS-019: 逃走後のfloorProgress・kills等をセーブ
         G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor);
       }, 800);
     } else {
-      setBattleLog('逃げられなかった！');
+      setBattleLog('逃げられなかった！', 'enemy');
       setTimeout(() => BATTLE._enemyAttack(), 600);
     }
   },
@@ -1293,10 +1313,10 @@ const BATTLE = {
       const nd = createDemon(e.masterId, e.lv);
       if (STATE.party.length < 3) {
         nd.inParty = true; STATE.party.push(nd);
-        setBattleLog(`${e.name}は仲間になった！（パーティ加入）`);
+        setBattleLog(`${e.name}は仲間になった！（パーティ加入）`, 'system');
       } else {
         STATE.storage.push(nd);
-        setBattleLog(`${e.name}は仲間になった！（倉庫へ）`);
+        setBattleLog(`${e.name}は仲間になった！（倉庫へ）`, 'system');
       }
       AUDIO.seNegotiateSuccess();
       addLog(`${e.name}が仲魔になった！`, 'success');
@@ -1305,29 +1325,31 @@ const BATTLE = {
       saveGame();
       setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor); }, 1200);
     } else {
-      setBattleLog(`${e.name}は激怒した！`);
+      setBattleLog(`${e.name}は激怒した！`, 'enemy');
       saveGame(); // ISS-014: 交渉失敗時もマッカ減算をセーブ（金で解決失敗時の消失防止）
       setTimeout(() => BATTLE._enemyAttack(), 600);
     }
   },
 
   _enemyAttack() {
-    const e = STATE.currentEnemy, t = STATE.party.find(d => d.hp > 0);
-    if (!t) { BATTLE._checkGameOver(); return; }
+    const e = STATE.currentEnemy;
+    const alive = STATE.party.filter(d => d.hp > 0);
+    if (!alive.length) { BATTLE._checkGameOver(); return; }
+    const t = alive[Math.floor(Math.random() * alive.length)];
     const dmg = calcDamage(e, t);
     if (STATE._guardActive) {
       STATE._guardActive = false;
-      setBattleLog(`${e.name}の攻撃を御札が防いだ！`);
+      setBattleLog(`${e.name}の攻撃を御札が防いだ！`, 'system');
       saveGame(); // ISS-020: 御札消費（_guardActive=false）をセーブし次回ロード時の復活を防止
-      renderPartyBar();
+      renderPartyBar(); UI.renderBattlePartyStrip();
       return;
     }
     t.hp = Math.max(0, t.hp - dmg);
     AUDIO.seHit();
-    setBattleLog(`${e.name}の反撃！ ${t.name}に${dmg}ダメージ`);
+    setBattleLog(`${e.name} → ${t.name} ${dmg}ダメ`, 'enemy');
     renderPartyBar(); UI.renderBattlePartyStrip();
     if (t.hp <= 0) {
-      setBattleLog(`${t.name} は倒れた…`);
+      setBattleLog(`${t.name} は倒れた…`, 'enemy');
       if (STATE.party.every(d => d.hp <= 0)) {
         // ISS-016: 全滅確定時にアクションボタンを即座に非表示にして連打を防止
         document.getElementById('battle-actions').style.display = 'none';
@@ -1346,7 +1368,7 @@ const BATTLE = {
       d.exp += eg;
       if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
     });
-    setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`);
+    setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`, 'system');
     playEnemyHitAnim();
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
     STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
@@ -1473,7 +1495,7 @@ const BATTLE = {
     else { skillBtn.classList.add('disabled'); skillBtn.disabled = true; }
     UI.renderBattlePartyStrip();
     UI.updateAffinityHint();
-    setBattleLog(`${d.name} が前衛に出た！`);
+    setBattleLog(`${d.name} が前衛に出た！`, 'system');
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
 
@@ -1497,7 +1519,7 @@ const BATTLE = {
     else { skillBtn.classList.add('disabled'); skillBtn.disabled = true; }
     UI.renderBattlePartyStrip();
     UI.updateAffinityHint();
-    setBattleLog(`${d.name} が加勢した！`);
+    setBattleLog(`${d.name} が加勢した！`, 'system');
     saveGame();
     setTimeout(() => BATTLE._enemyAttack(), 600);
   },
@@ -1507,7 +1529,7 @@ const BATTLE = {
   applyBattleItem(itemName) {
     const result = ITEM.use(itemName);
     if (!result.ok) { showToast(result.msg); return; }
-    setBattleLog(`🎒 ${result.msg}`);
+    setBattleLog(`🎒 ${result.msg}`, 'player');
     saveGame();
     renderPartyBar(); UI.renderBattlePartyStrip();
     BATTLE.cancelItemPanel();
@@ -1550,6 +1572,21 @@ const FUSION = {
     if (!a || !b) return;
     const preview = getFusionResult(a, b);
     if (!preview) { showToast('この組み合わせは合体できない'); return; }
+    if (!STATE._fusionConfirm) {
+      STATE._fusionConfirm = true;
+      const btn = document.getElementById('btn-fusion-exec');
+      btn.textContent = '⚠ もう一度タップで確定';
+      btn.classList.add('warn');
+      setTimeout(() => {
+        if (STATE._fusionConfirm) {
+          STATE._fusionConfirm = false;
+          btn.textContent = '⚡ 合体実行';
+          btn.classList.remove('warn');
+        }
+      }, 3000);
+      return;
+    }
+    STATE._fusionConfirm = false;
     // 素材を party / storage から除去
     STATE.party   = STATE.party.filter(d => d.uid !== a.uid && d.uid !== b.uid);
     STATE.storage = STATE.storage.filter(d => d.uid !== a.uid && d.uid !== b.uid);
@@ -1612,7 +1649,7 @@ const G={
     Object.assign(STATE,{floor:1,macca:100,kills:0,fusions:0,bestFloor:1,
       floorProgress:0,exploring:false,exploreTimer:null,
       party:[],storage:[],fusionA:null,fusionB:null,items:{},legacyMacca:0,_pendingBonus:0,
-      _skillStoneActive:false,_guardActive:false});
+      _skillStoneActive:false,_guardActive:false,_fusionConfirm:false});
     // ISS-009: 引継マッカを初期マッカに加算
     STATE.macca += bonus;
     const s=createDemon(1,1);s.inParty=true;
@@ -1677,6 +1714,13 @@ const G={
       if (STATE.floorProgress === 4 && STATE.floor % 10 === 9) {
         addLog(`⚠ 次戦に勝てば B${STATE.floor + 1}F へ — ボスフロアだ！`, 'warn');
       }
+      STATE.party.forEach(d => {
+        if (d.hp > 0) {
+          const critical = d.hp <= Math.floor(d.maxHp * 0.25);
+          if (critical && !d._hpCritWarn) { addLog(`🚨 ${d.name} HP危機！（${d.hp}/${d.maxHp}）`, 'warn'); d._hpCritWarn = true; }
+          else if (!critical) { d._hpCritWarn = false; }
+        }
+      });
       ANIM.logFlash();                     // ログエリア微フラッシュ
       saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
       renderExplore();
@@ -1735,4 +1779,6 @@ const G={
 (function init(){
   document.getElementById('title-version').textContent=`v${APP_VERSION}`;
   if(loadGame())document.getElementById('btn-continue').style.display='';
+  const best=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
+  if(best>0)document.getElementById('title-record').textContent=`最高到達: B${best}F`;
 })();

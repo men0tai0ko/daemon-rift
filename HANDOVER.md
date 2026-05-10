@@ -9,12 +9,26 @@
 
 **プロジェクト:** 女神転生世界観のブラウザ向けタップ系RPG。悪魔を仲魔にし、合体で強化しながら廃都の深層へ潜る放置＋育成ゲーム。3ファイル構成（index.html / style.css / script.js）、スマートフォン縦持ち最適化。
 
-**現在のバージョン:** v0.9.0
-**現在の状態:** リリース済み。パーティ管理・戦闘UI改善（ストリップ位置変更・隊列変更・属性ヒント・倉庫交代・ボス警告ほか8改善）。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
+**現在のバージョン:** v0.10.0
+**現在の状態:** リリース済み。バグ修正（全仲魔攻撃・ランダム被ダメ・合体同名区別）＋UX8改善（ログ色分け・HP%・合体2タップ確認・スキルダメ予測・EXP表示・HP危機警告・タイトル記録・スキル使用者表示）。OPEN issueゼロ。次フェーズはAndroid Chrome実機動作確認。
 
 ---
 
 ## ■ 直近の変更内容
+
+### v0.10.0（2026-05-10）
+- **バグ修正:** `BATTLE.attack()` — 全生存仲魔がそれぞれ `calcDamage()` でダメージを計算・攻撃。先頭のみ攻撃の問題を解消
+- **バグ修正:** `BATTLE._enemyAttack()` — `STATE.party.filter(d=>d.hp>0)` からランダムに1体を選択して攻撃対象にする。先頭固定の問題を解消
+- **バグ修正:** 合体画面の仲魔一覧・スロット情報に `HP:現在/最大` を追加。同名悪魔の区別が可能に
+- **UX改善:** `UI.setBattleLog(msg, type='')` — `type` 引数追加。`player`/`enemy`/`system` クラスで色分け（CSS変数利用）
+- **UX改善:** `UI.renderEnemyHP()` — HP%をリアルタイム表示（例: `HP: 42 / 100 (42%)`）
+- **UX改善:** 合体確認ダイアログ — `FUSION.execute()` に2タップ確定を追加。初回タップで⚠表示・3秒でリセット
+- **UX改善:** スキルパネルに予想ダメージ範囲を表示 — `startSkillPanel()` で `AFFINITY` × `calcDamage()` × `power` × ±15% を計算
+- **UX改善:** スキル使用ログにスキル使用者名を追加 — `_executeSkill()` で `${lead.name}: ${result.msg}` を表示
+- **UX改善:** 仲魔画面の dstats に `EXP:現在/次レベル` を追加
+- **UX改善:** 探索中 HP が 25% 以下の仲魔に危機ログを出力（`d._hpCritWarn` フラグで重複防止）
+- **UX改善:** タイトル画面に最高到達フロアを表示（`id="title-record"` + `LS_KEY_BEST` localStorage 読み取り）
+- **CSS追加:** `.battle-log-line.player` / `.enemy` / `.system` / `.title-record` スタイル追加
 
 ### v0.9.0（2026-05-08）
 - **レイアウト変更:** `battle-party-strip` を `battle-log-area` 直下に移動（戦闘ログと仲魔HPを隣接させて視認性向上）
