@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.16.0';
+const APP_VERSION = '0.17.0';
 const APP_NAME    = 'DAEMON RIFT';
 const MAX_LEVEL   = 100; // レベル上限
 
@@ -420,8 +420,9 @@ const ITEM = {
       case '覚醒の書': {
         const t = target ?? STATE.party.find(d => d.hp > 0);
         if (!t) return { ok: false, msg: '対象がいない' };
+        const prevAtk=t.atk, prevDef=t.def, prevHp=t.maxHp;
         applyLevelUp(t);
-        msg = `${t.name}がLv${t.lv}にレベルアップした！`;
+        msg = `${t.name}がLv${t.lv}にレベルアップ！ HP+${t.maxHp-prevHp} ATK+${t.atk-prevAtk} DEF+${t.def-prevDef}`;
         AUDIO.seLevelUp();
         ANIM.levelUpBanner(t.name);
         break;
@@ -569,7 +570,8 @@ const UI = {
         const p = (d.hp / d.maxHp) * 100, bc = p > 50 ? '' : p > 25 ? 'low' : 'critical';
         const isLead = lead && d.uid === lead.uid;
         card.className = `party-card ${d.hp <= 0 ? 'dead' : ''}`;
-        card.innerHTML = `<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}${isLead ? '<span style="font-size:8px;color:var(--cyan);margin-left:3px">LEAD</span>' : ''}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:9px;color:var(--muted);text-align:right;margin-top:1px">${Math.max(0,d.hp)}/${d.maxHp}</div>`;
+        const ep = d.lv >= MAX_LEVEL ? 100 : Math.min(100, Math.floor((d.exp / d.expNext) * 100));
+        card.innerHTML = `<div class="party-card-top"><div class="party-demon-emoji">${d.emoji}</div><div class="party-demon-info"><div class="party-demon-name">${d.name}${isLead ? '<span style="font-size:8px;color:var(--cyan);margin-left:3px">LEAD</span>' : ''}</div><div class="party-demon-lv">Lv${d.lv}</div></div></div><div class="hp-bar-wrap"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:9px;color:var(--muted);text-align:right;margin-top:1px">${Math.max(0,d.hp)}/${d.maxHp}</div><div class="exp-bar-wrap"><div class="exp-bar" style="width:${ep}%"></div></div>`;
       }
       list.appendChild(card);
     }
@@ -689,7 +691,7 @@ const UI = {
         document.getElementById('fusion-result-emoji').textContent = r.emoji;
         document.getElementById('fusion-result-name').textContent = `${r.name} Lv${r.lv}`;
         const stoneLabel = STATE._skillStoneActive ? ' 💎 確定継承' : '';
-        document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill}${stoneLabel}`;
+        document.getElementById('fusion-result-skill').textContent = `継承スキル: ${r.skill ?? 'スキルなし'}${stoneLabel}`;
         const rd = createDemon(r.masterId, r.lv);
         document.getElementById('fusion-result-stats').textContent = rd ? `HP:${rd.maxHp} ATK:${rd.atk} DEF:${rd.def} SPD:${rd.spd}` : '';
         // ISS-023: 合体可能なら実行ボタンを活性化
@@ -739,7 +741,8 @@ const UI = {
       const partyIdx = STATE.party.indexOf(d);
       // パーティ内隊列変更ボタン（上下矢印）
       const reorderHtml = d.inParty ? `<div style="display:flex;flex-direction:column;gap:3px;margin-right:6px"><button class="btn${partyIdx === 0 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyUp('${d.uid}')" ${partyIdx === 0 ? 'disabled' : ''}>↑</button><button class="btn${partyIdx === STATE.party.length - 1 ? ' disabled' : ''}" style="padding:2px 7px;font-size:13px;min-height:28px;" onclick="G.movePartyDown('${d.uid}')" ${partyIdx === STATE.party.length - 1 ? 'disabled' : ''}>↓</button></div>` : '';
-      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd} ／ EXP:${d.exp}/${d.expNext}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div>${hpZeroNote}</div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${d.inParty ? '外す' : 'パーティ'}</button>`;
+      const joinLabel = d.inParty ? '外す' : (partyFull ? '満員' : 'パーティ');
+      el.innerHTML = `<div class="emoji">${d.emoji}</div><div class="info"><div class="dname">${d.name}${isLead ? ' <span style="font-size:9px;color:var(--cyan)">LEAD</span>' : ''}</div><div class="dtags"><span class="tag race-tag">${d.race}</span><span class="tag attr-${d.attr}">${d.attr}</span>${d.inParty ? '<span class="tag party-tag">PARTY</span>' : ''}</div><div class="dstats">Lv${d.lv} ／ ATK:${d.atk} DEF:${d.def} SPD:${d.spd} ／ EXP:${d.exp}/${d.expNext}</div><div class="dskills">スキル: ${d.skills.join(' / ')}</div><div class="dhp"><div class="hp-bar-wrap" style="height:5px"><div class="hp-bar ${bc}" style="width:${p}%"></div></div><div style="font-size:10px;color:var(--muted);margin-top:2px">${Math.max(0, d.hp)} / ${d.maxHp}</div>${hpZeroNote}</div></div>${reorderHtml}<button class="btn action-btn ${d.inParty ? 'warn' : 'success'}${btnDisabled}" onclick="G.toggleParty('${d.uid}')">${joinLabel}</button>`;
       content.appendChild(el);
     });
     // ISS-012: 倉庫0体時に空表示を追加
@@ -1573,14 +1576,17 @@ const BATTLE = {
       AUDIO.seFloorUp();   // 未接続だった階層上昇SEを接続
       ANIM.floorUp();      // フロア数字ポップ演出
       const newArea = [...AREAS].reverse().find(a => STATE.floor >= a.minFloor)?.name;
-      if (newArea !== prevArea) setTimeout(() => ANIM.areaBanner(newArea), 350);
+      if (newArea !== prevArea) {
+        setTimeout(() => ANIM.areaBanner(newArea), 350);
+        addLog(`🗺 新エリア「${newArea}」に突入（敵Lv目安: ${STATE.floor}〜）`, 'system');
+      }
     }
     saveGame();
     STATE.inBattle = false;
     // 戦闘後HP低下警告
     const warnLead = STATE.party.find(d => d.hp > 0);
     if (warnLead && warnLead.hp / warnLead.maxHp <= 0.3) {
-      addLog(`🏥 ${warnLead.name} HP危険（${warnLead.hp}/${warnLead.maxHp}）— 地上帰還を推奨`, 'warn');
+      addLog(`🏥 ${warnLead.name} HP危険（${warnLead.hp}/${warnLead.maxHp}）— 地上帰還を推奨 宿屋目安 ₪${calcInnCost()}`, 'warn');
     }
     setTimeout(() => { G.showScreen('screen-explore'); renderExplore(); AUDIO.playBgmExplore(STATE.floor); }, 1200);
   },
@@ -1601,7 +1607,7 @@ const BATTLE = {
     document.getElementById('go-kills').textContent   = STATE.kills;
     document.getElementById('go-fusions').textContent = STATE.fusions > 0 ? STATE.fusions : '－'; // ISS-017: 0回は「－」表示
     // ISS-009: 次回引継額をリザルトに表示
-    document.getElementById('go-legacy').textContent  = `₪ ${STATE.legacyMacca}`;
+    document.getElementById('go-legacy').textContent  = `₪ ${STATE.legacyMacca}（B${STATE.bestFloor}F 到達による）`;
     G.showScreen('screen-gameover');
   },
 
@@ -1671,7 +1677,7 @@ const BATTLE = {
   openPartySwap() {
     if (!STATE.inBattle) return;
     const others = STATE.party.slice(1); // 先頭以外のパーティメンバー
-    const canAdd = STATE.party.length < 3 && STATE.storage.length > 0;
+    const canAdd = STATE.party.length < 3 && STATE.storage.some(d => d.hp > 0);
     if (!others.length && !canAdd) { showToast('交代できる仲魔がいない'); return; }
     const list = document.getElementById('party-swap-list');
     list.innerHTML = '';
@@ -1910,7 +1916,7 @@ const G={
       btn.className=`btn${f===best?' primary':''}`;
       btn.style.cssText='margin-bottom:4px;';
       const bossLabel=f%10===0?' ⚠ ボス':'';
-      btn.textContent=`B${f}F${bossLabel} — ${area}`;
+      btn.textContent=`B${f}F${bossLabel} — ${area}（敵Lv目安: ${f}）`;
       btn.onclick=()=>G._doEnterDungeon(f);
       list.appendChild(btn);
     });
@@ -2178,7 +2184,11 @@ const G={
 // ================================================================
 (function init(){
   document.getElementById('title-version').textContent=`v${APP_VERSION}`;
-  if(loadGame())document.getElementById('btn-continue').style.display='';
+  if(loadGame()){
+    const contBtn=document.getElementById('btn-continue');
+    contBtn.style.display='';
+    if(STATE.bestFloor>1) contBtn.textContent=`↩ コンティニュー（最高 B${STATE.bestFloor}F）`;
+  }
   const best=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
   if(best>0)document.getElementById('title-record').textContent=`最高到達: B${best}F`;
 })();
