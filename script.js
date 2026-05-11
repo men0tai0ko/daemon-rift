@@ -2,8 +2,9 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.15.0';
+const APP_VERSION = '0.16.0';
 const APP_NAME    = 'DAEMON RIFT';
+const MAX_LEVEL   = 100; // レベル上限
 
 // ================================================================
 // [BLOCK: DATA] マスターデータ・定数
@@ -122,7 +123,7 @@ const STATE = {
   legacyMacca:0, // ISS-009: ゲームオーバー時に計算・保存する引継マッカ
   // ランタイム専用（セーブ対象外）[RUNTIME]
   floorProgress:0,
-  exploring:false, exploreTimer:null,
+  exploring:false, exploreTimer:null, exploreSpeed:1,
   inBattle:false, currentEnemy:null,
   fusionSlot:null, fusionA:null, fusionB:null,
   _skillStoneActive:false, _guardActive:false,
@@ -206,8 +207,10 @@ function getFusionResult(a,b){
 }
 
 // レベルアップ処理（STATEの悪魔オブジェクトを直接更新する）
+// EXPオーバーフロー分を次レベルに繰り越す（複数レベルアップにも対応）
 function applyLevelUp(demon){
-  demon.lv++;demon.exp=0;demon.expNext=demon.lv*20;
+  const overflow=demon.exp-demon.expNext;
+  demon.lv++;demon.exp=Math.max(0,overflow);demon.expNext=demon.lv*20;
   demon.maxHp+=rand(5,10);demon.hp=demon.maxHp;
   demon.atk+=rand(1,2);demon.def+=rand(1,2);
 }
@@ -1551,8 +1554,10 @@ const BATTLE = {
     document.getElementById('battle-macca-display').textContent = STATE.macca;
     let anyLevelUp = false;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
+      if (d.lv >= MAX_LEVEL) return;
       d.exp += eg;
-      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); anyLevelUp = true; }
+      while (d.exp >= d.expNext && d.lv < MAX_LEVEL) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); anyLevelUp = true; }
+      if (d.lv >= MAX_LEVEL) { d.exp = 0; addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`, 'system'); anyLevelUp = true; }
     });
     if (anyLevelUp) UI.renderBattlePartyStrip();
     setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`, 'system');
@@ -2043,9 +2048,24 @@ const G={
     if(!STATE.party.length){showToast('仲魔がいない！');return;}
     if(STATE.party.every(d=>d.hp<=0)){showToast('仲魔が全滅している！');return;}
     STATE.exploring=!STATE.exploring;
-    if(STATE.exploring){STATE.exploreTimer=setInterval(G._exploreStep,2000);addLog('探索を開始した…','system');AUDIO.playBgmExplore(STATE.floor);}
-    else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
+    if(STATE.exploring){
+      const interval=Math.round(2000/STATE.exploreSpeed);
+      STATE.exploreTimer=setInterval(G._exploreStep,interval);
+      addLog('探索を開始した…','system');AUDIO.playBgmExplore(STATE.floor);
+    }else{clearInterval(STATE.exploreTimer);addLog('探索を停止した','system');AUDIO.stopBgm();}
     renderExplore();
+  },
+
+  setExploreSpeed(spd){
+    STATE.exploreSpeed=spd;
+    [1,2,4].forEach(s=>{
+      const btn=document.getElementById(`speed-x${s}`);
+      if(btn) btn.classList.toggle('active',s===spd);
+    });
+    if(STATE.exploring){
+      clearInterval(STATE.exploreTimer);
+      STATE.exploreTimer=setInterval(G._exploreStep,Math.round(2000/spd));
+    }
   },
 
   _exploreStep(){
@@ -2062,8 +2082,10 @@ const G={
       const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
       const expGain=rand(2,4+Math.floor(STATE.floor/3));
       STATE.party.filter(d=>d.hp>0).forEach(d=>{
+        if(d.lv>=MAX_LEVEL) return;
         d.exp+=expGain;
-        if(d.exp>=d.expNext){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
+        while(d.exp>=d.expNext&&d.lv<MAX_LEVEL){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');AUDIO.seLevelUp();ANIM.levelUpBanner(d.name);}
+        if(d.lv>=MAX_LEVEL){d.exp=0;addLog(`⭐ ${d.name} がLv${MAX_LEVEL}に到達した！`,'system');}
       });
       // 自動討伐: ランダムな生存仲魔が微ダメージを受ける（HP1以下にはならない）
       const aliveMembers=STATE.party.filter(d=>d.hp>0);
