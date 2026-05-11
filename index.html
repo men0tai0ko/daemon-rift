@@ -1,7 +1,7 @@
 <!--
 ================================================================
   DAEMON RIFT 廃都の悪魔
-  Version : 0.15.0
+  Version : 0.16.0
   Updated : 2026-05-10
   Author  : ののやま
 ================================================================
@@ -14,7 +14,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="application-name" content="DAEMON RIFT">
-<meta name="version" content="0.15.0">
+<meta name="version" content="0.16.0">
 <meta name="author" content="ののやま">
 <title>DAEMON RIFT</title>
 <link rel="stylesheet" href="./style.css">
@@ -99,6 +99,12 @@
       <div class="explore-ctrl-row">
         <button class="btn" id="btn-surface" onclick="G.surfaceFromDungeon()">⬆ 地上へ戻る</button>
       </div>
+    </div>
+    <div class="speed-controls">
+      <span class="speed-label">速度</span>
+      <button class="btn speed-btn active" id="speed-x1" onclick="G.setExploreSpeed(1)">×1</button>
+      <button class="btn speed-btn" id="speed-x2" onclick="G.setExploreSpeed(2)">×2</button>
+      <button class="btn speed-btn" id="speed-x4" onclick="G.setExploreSpeed(4)">×4</button>
     </div>
     <div class="negotiate-panel" id="surface-confirm-panel">
       <div class="negotiate-title">▌ 地上に戻る</div>
