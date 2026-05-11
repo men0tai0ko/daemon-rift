@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.15.0';
 const APP_NAME    = 'DAEMON RIFT';
 
 // ================================================================
@@ -604,7 +604,7 @@ const UI = {
       const isDead = d.hp <= 0;
       const card = document.createElement('div');
       card.className = `bps-card${isLead ? ' lead' : ''}${isDead ? ' dead' : ''}`;
-      card.innerHTML = `<div class="bps-emoji">${d.emoji}</div><div class="bps-name">${isLead ? '★ ' : ''}${d.name}</div><div class="bps-hp ${bc}">${Math.max(0,d.hp)}/${d.maxHp}</div><div class="bps-hp-bar"><div class="bps-hp-fill ${bc}" style="width:${pct}%"></div></div>`;
+      card.innerHTML = `<div class="bps-emoji">${d.emoji}</div><div class="bps-name">${isLead ? '★ ' : ''}${d.name} <span style="font-size:9px;color:var(--muted)">Lv${d.lv}</span></div><div class="bps-hp ${bc}">${Math.max(0,d.hp)}/${d.maxHp}</div><div class="bps-hp-bar"><div class="bps-hp-fill ${bc}" style="width:${pct}%"></div></div>`;
       card.onclick = () => showToast(d.skills.length ? `${d.name}: ${d.skills.join('・')}` : `${d.name}: スキルなし`);
       strip.appendChild(card);
     });
@@ -613,6 +613,12 @@ const UI = {
       card.className = 'bps-card';
       card.innerHTML = '<div style="font-size:10px;color:var(--border)">—</div>';
       strip.appendChild(card);
+    }
+    // リード仲魔変化時に逃走率を自動更新
+    if (STATE.currentEnemy) {
+      const curLead = STATE.party.find(d => d.hp > 0);
+      const fleeBtn = document.getElementById('btn-flee');
+      if (fleeBtn && curLead) fleeBtn.textContent = `🏃 逃げる（${Math.round(calcFleeRate(curLead, STATE.currentEnemy) * 100)}%）`;
     }
   },
 
@@ -837,7 +843,8 @@ const UI = {
         btnInn.textContent = `🛏 宿屋 ₪${innCost}（₪不足）`;
         btnInn.classList.add('disabled'); btnInn.disabled = true;
       } else {
-        btnInn.textContent = `🛏 宿屋 ₪${innCost}`;
+        const healCount = alive.filter(d => d.hp < d.maxHp).length;
+        btnInn.textContent = `🛏 宿屋 ₪${innCost}（${healCount}体回復）`;
         btnInn.classList.remove('disabled'); btnInn.disabled = false;
       }
     }
@@ -1364,16 +1371,18 @@ const BATTLE = {
       demon.skills.forEach(skillName => {
         const s = SKILL.MASTER[skillName];
         const typeLabel = {attack:'攻撃',heal:'回復',debuff:'弱体',special:'特殊'}[s?.type] ?? '';
-        let dmgHint = '';
+        let dmgHint = '', affLabel = '';
         if (s?.type === 'attack' && e2) {
           const aff = AFFINITY[s.attr]?.[e2.attr] ?? 1;
           const base = Math.floor(calcDamage(demon, e2) * (s.power ?? 1) * aff);
           dmgHint = ` 推定${Math.floor(base * 0.85)}〜${Math.floor(base * 1.15)}`;
+          if (aff >= 2) affLabel = ' ⚡弱点！';
+          else if (aff <= 0.5) affLabel = ' 🛡耐性';
         }
         const btn = document.createElement('button');
         btn.className = 'btn';
         btn.style.cssText = 'margin-bottom:4px;font-size:11px;';
-        btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}${dmgHint}）`;
+        btn.textContent = `${skillName}（${typeLabel}・${s?.desc ?? ''}${dmgHint}${affLabel}）`;
         btn.onclick = () => G.doSkillSelect(skillName, demon.uid);
         list.appendChild(btn);
       });
@@ -1436,10 +1445,11 @@ const BATTLE = {
     const e = STATE.currentEnemy, lead = STATE.party.find(d => d.hp > 0);
     if (lead && e) {
       const rate = t => Math.round(calcNegotiateRate(lead.lv, e.lv, t) * 100);
+      const costHint = `₪${10}〜${20 + e.lv * 3}程度`;
       document.getElementById('negotiate-opts').innerHTML =
         `<button class="btn" onclick="G.doNegotiate('おだてる')">😊 おだてる（${rate('おだてる')}%）</button>` +
         `<button class="btn warn" onclick="G.doNegotiate('脅す')">😤 脅す（${rate('脅す')}%）</button>` +
-        `<button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（${rate('金で解決')}%）</button>`;
+        `<button class="btn success" onclick="G.doNegotiate('金で解決')">💰 マッカを渡す（${rate('金で解決')}%・${costHint}）</button>`;
     }
     document.getElementById('negotiate-panel').classList.add('active');
     document.getElementById('battle-actions').style.display = 'none';
@@ -1469,15 +1479,16 @@ const BATTLE = {
     document.getElementById('battle-actions').style.display = '';
     if (chance(calcNegotiateRate(lead.lv, e.lv, tactic))) {
       const nd = createDemon(e.masterId, e.lv);
+      const skillText = nd.skills.length ? nd.skills.join('・') : 'スキルなし';
       if (STATE.party.length < 3) {
         nd.inParty = true; STATE.party.push(nd);
-        setBattleLog(`${e.name}は仲間になった！（パーティ加入）`, 'system');
+        setBattleLog(`${e.name} Lv${nd.lv}は仲魔になった！（パーティ加入）`, 'system');
       } else {
         STATE.storage.push(nd);
-        setBattleLog(`${e.name}は仲間になった！（倉庫へ）`, 'system');
+        setBattleLog(`${e.name} Lv${nd.lv}は仲魔になった！（倉庫へ）`, 'system');
       }
       AUDIO.seNegotiateSuccess();
-      addLog(`${e.name}が仲魔になった！`, 'success');
+      addLog(`${e.name}が仲魔になった！ スキル: ${skillText}`, 'success');
       STATE.inBattle = false;
       STATE.floorProgress = Math.max(0, STATE.floorProgress - 1);
       saveGame();
@@ -1537,10 +1548,13 @@ const BATTLE = {
     const eg = rand(5, 10 + STATE.floor);
     STATE.macca += mg;
     STATE.kills++;
+    document.getElementById('battle-macca-display').textContent = STATE.macca;
+    let anyLevelUp = false;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
       d.exp += eg;
-      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); }
+      if (d.exp >= d.expNext) { applyLevelUp(d); addLog(`${d.name} Lv${d.lv}にレベルアップ！`, 'success'); AUDIO.seLevelUp(); ANIM.levelUpBanner(d.name); anyLevelUp = true; }
     });
+    if (anyLevelUp) UI.renderBattlePartyStrip();
     setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`, 'system');
     playEnemyHitAnim();
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
@@ -1674,7 +1688,7 @@ const BATTLE = {
       lbl.style.cssText = 'font-size:9px;color:var(--orange);margin:6px 0 4px;letter-spacing:1px';
       lbl.textContent = '▌ 倉庫から加勢（空き枠に追加）';
       list.appendChild(lbl);
-      STATE.storage.forEach(d => {
+      STATE.storage.filter(d => d.hp > 0).forEach(d => {
         const btn = document.createElement('button');
         btn.className = 'btn';
         btn.textContent = `${d.emoji} ${d.name} Lv${d.lv}  HP ${d.hp}/${d.maxHp}`;
@@ -2076,6 +2090,13 @@ const G={
           else if (!critical) { d._hpCritWarn = false; }
         }
       });
+      // 全員HP15%以下なら自動探索を緊急停止
+      const aliveNow = STATE.party.filter(d => d.hp > 0);
+      if (aliveNow.length && aliveNow.every(d => d.hp / d.maxHp <= 0.15) && STATE.exploring) {
+        STATE.exploring = false; clearInterval(STATE.exploreTimer);
+        addLog('⛔ 全員HP危機 — 自動探索を緊急停止', 'warn');
+        showToast('⛔ 全員HP危機！探索を停止した');
+      }
       ANIM.logFlash();                     // ログエリア微フラッシュ
       saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
       renderExplore();
