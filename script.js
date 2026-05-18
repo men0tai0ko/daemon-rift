@@ -2,7 +2,7 @@
 // [BLOCK: META] バージョン情報
 // HTMLコメントヘッダー / metaタグ / タイトル画面 の3点と同期させること
 // ================================================================
-const APP_VERSION = '0.17.0';
+const APP_VERSION = '0.18.0';
 const APP_NAME    = 'DAEMON RIFT';
 const MAX_LEVEL   = 100; // レベル上限
 
@@ -101,6 +101,36 @@ const AREAS = [
   {minFloor:1, name:"廃都表層"},{minFloor:11,name:"地下街区"},
   {minFloor:31,name:"冥界回廊"},{minFloor:61,name:"虚無の底"},
 ];
+// 探索コメントバリエーション（絵文字＋動詞ペア）
+const COMBAT_MSGS = [
+  ['⚔️','切り伏せた'],['🗡️','仕留めた'],['💥','撃破した'],
+  ['⚡','一閃！'],['🌪️','薙ぎ払った'],['🔥','焼き尽くした'],
+  ['❄️','凍らせた'],['🌊','押し流した'],['☄️','砕いた'],['💢','叩きのめした'],
+];
+// 種族別仲魔ランダムコメント（探索中に確率で発言）
+const DEMON_COMMENTS = {
+  '妖精':  ['「まだまだいけますよ！」','「この先に宝があるかも…」','「気をつけて、気配を感じます」'],
+  '鬼神':  ['「もっと強い敵を寄越せ！」','「血が滾るぜ」','「退くことは知らん！」'],
+  '死霊':  ['「…深く進むほど死の匂いがする」','「…冷たい」','「…ここは好きじゃない」'],
+  '堕天使':['「面白い場所じゃないか」','「力を見せてやろう」','「お前に従うのも悪くない」'],
+  '幻魔':  ['「不思議な予感がする…」','「ここには何かが潜んでいる」','「私の本能が告げている」'],
+  '天使':  ['「正義のために進め！」','「我が加護があれば恐くない」','「清らかな光で照らそう」'],
+  '魔王':  ['「貴様ら弱者はついてくるがいい」','「この程度か…つまらん」','「我の力を借りるとは光栄に思え」'],
+  '竜神':  ['「…（大きく息を吸う）」','「竜の力を侮るな」','「前へ」'],
+};
+// ランダムイベントプール（探索中に低確率で発生する即時イベント）
+const EXPLORE_EVENTS = [
+  { id:'spring', text:'💧 回復の泉を発見！リード仲魔のHPが回復した', type:'success',
+    fn:()=>{ const d=STATE.party.find(x=>x.hp>0); if(d) d.hp=Math.min(d.maxHp,d.hp+Math.ceil(d.maxHp*0.12)); } },
+  { id:'bag',    text:'💰 落ちていたマッカ袋を拾った！', type:'success',
+    fn:()=>{ const g=rand(30,80); STATE.macca+=g; return g; } },
+  { id:'tablet', text:'📜 古い術式の石板を調べた。仲魔たちの力が増した', type:'success',
+    fn:()=>{ const g=rand(8,15); STATE.party.filter(d=>d.hp>0).forEach(d=>{ if(d.lv<MAX_LEVEL){ d.exp+=g; while(d.exp>=d.expNext&&d.lv<MAX_LEVEL){applyLevelUp(d);addLog(`${d.name} Lv${d.lv}にレベルアップ！`,'success');ANIM.levelUpBanner(d.name);} } }); } },
+  { id:'curse',  text:'💀 呪いの碑文に触れた…リード仲魔がダメージを受けた', type:'warn',
+    fn:()=>{ const d=STATE.party.find(x=>x.hp>0); if(d) d.hp=Math.max(1,d.hp-Math.ceil(d.maxHp*0.08)); } },
+  { id:'trap',   text:'⚙️ 罠を踏んだ！仲魔がダメージを受けた', type:'warn',
+    fn:()=>{ const a=STATE.party.filter(d=>d.hp>0); if(a.length){const t=a[rand(0,a.length-1)];t.hp=Math.max(1,t.hp-rand(3,8));} } },
+];
 
 // ================================================================
 // [BLOCK: STATE] ゲーム状態
@@ -129,6 +159,8 @@ const STATE = {
   _skillStoneActive:false, _guardActive:false,
   _pendingBonus:0, // ISS-009: _checkGameOver()でのみセット・startNewGame()で消費（RUNTIME）
   _returnTo:'explore', // 仲魔一覧/合体ラボから戻る先（'explore' | 'town'）
+  killStreak:0, winStreak:0,
+  sessionKills:0, sessionMacca:0, sessionDeepFloor:1,
 };
 
 // ================================================================
@@ -460,7 +492,8 @@ const ITEM = {
         : ['回復薬','万能薬','スキル石','覚醒の書','マッカ袋','守りの御札'];
     const name = pool[Math.floor(Math.random() * pool.length)];
     const added = ITEM.add(name);
-    return added ? name : null;
+    if(!added) return null;
+    return { name, isRare: ['スキル石','覚醒の書'].includes(name) };
   },
 
   // 所持アイテム一覧を配列で返す（UI描画用）
@@ -517,14 +550,24 @@ function loadGame(){
   }catch(e){console.error('[SAVE] パース失敗:',e);return null;}
 }
 
+// フロア初到達ボーナス（マッカ）
+const FLOOR_MILESTONES = {10:50, 20:100, 30:150, 50:300, 100:800};
 // 最大到達深度を STATE と localStorage の両方に記録する
 function updateBestFloor(){
+  const prev=STATE.bestFloor;
   if(STATE.floor>STATE.bestFloor)STATE.bestFloor=STATE.floor;
-  const prev=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
-  if(STATE.bestFloor>prev){
+  const prevLS=parseInt(localStorage.getItem(LS_KEY_BEST)??'0');
+  if(STATE.bestFloor>prevLS){
     localStorage.setItem(LS_KEY_BEST,STATE.bestFloor);
     const el=document.getElementById('title-record');
     if(el)el.textContent=`最高到達: B${STATE.bestFloor}F`;
+  }
+  // フロアマイルストーン報酬（初回到達のみ）
+  const bonus=FLOOR_MILESTONES[STATE.bestFloor];
+  if(bonus&&STATE.bestFloor>prev){
+    STATE.macca+=bonus;
+    addLog(`🏆 B${STATE.bestFloor}F 初到達ボーナス！ ₪+${bonus}`,'success');
+    showToast(`🏆 B${STATE.bestFloor}F 到達！ ₪+${bonus}`);
   }
 }
 
@@ -1433,6 +1476,7 @@ const BATTLE = {
     const fleeLead = STATE.party.find(d => d.hp > 0);
     if (chance(calcFleeRate(fleeLead, STATE.currentEnemy))) {
       STATE.inBattle = false;
+      STATE.winStreak = 0;
       AUDIO.seFlee();
       setBattleLog('うまく逃げ切った！', 'system');
       setTimeout(() => {
@@ -1550,10 +1594,21 @@ const BATTLE = {
 
   _enemyDefeated() {
     const e = STATE.currentEnemy;
+    const wasInDanger = STATE.party.some(d => d.hp > 0 && d.hp / d.maxHp <= 0.3);
     const mg = rand(10, 20 + STATE.floor * 2);
     const eg = rand(5, 10 + STATE.floor);
     STATE.macca += mg;
     STATE.kills++;
+    STATE.winStreak++;
+    // ⑧winStreak ボーナス
+    let streakBonus = 0;
+    if(STATE.winStreak===3) streakBonus = 30 + STATE.floor;
+    if(STATE.winStreak===5) streakBonus = 80 + STATE.floor*2;
+    if(STATE.winStreak>=10 && STATE.winStreak%5===0) streakBonus = 150 + STATE.floor*3;
+    if(streakBonus>0) STATE.macca+=streakBonus;
+    // ⑦危機からの生還ボーナス
+    const dangerBonus = wasInDanger ? rand(20,50)+STATE.floor : 0;
+    if(dangerBonus>0) STATE.macca+=dangerBonus;
     document.getElementById('battle-macca-display').textContent = STATE.macca;
     let anyLevelUp = false;
     STATE.party.filter(d => d.hp > 0).forEach(d => {
@@ -1564,6 +1619,8 @@ const BATTLE = {
     });
     if (anyLevelUp) UI.renderBattlePartyStrip();
     setBattleLog(`${e.name}を倒した！ ₪+${mg} EXP+${eg}`, 'system');
+    if(streakBonus>0){const sl=STATE.winStreak>=5?'🔥':'⚡';const lb=STATE.winStreak>=10?`${STATE.winStreak}連勝`:STATE.winStreak===3?'3連勝':'5連勝';addLog(`${sl} ${lb}ボーナス！ ₪+${streakBonus}`,'success');if(STATE.winStreak>=5)showToast(`${sl} ${lb}ボーナス！`);}
+    if(dangerBonus>0) addLog(`💪 瀕死から生還！ ₪+${dangerBonus}`,'success');
     playEnemyHitAnim();
     // ISS-008: 戦闘終了時に敵へのデバフ蓄積をリセット（次戦への永続防止）
     STATE.party.forEach(d => { if (d._debuff) { d.atk += d._debuff; d._debuff = 0; } });
@@ -1929,6 +1986,8 @@ const G={
     document.getElementById('dungeon-floor-panel').classList.remove('active');
     STATE.floor=floor;
     STATE.floorProgress=0;
+    STATE.sessionKills=0;STATE.sessionMacca=0;STATE.sessionDeepFloor=floor;
+    STATE.killStreak=0;STATE.winStreak=0;
     saveGame();
     G.showScreen('screen-explore');
     renderExplore();
@@ -1941,7 +2000,7 @@ const G={
     if(STATE.exploring){showToast('探索を停止してから地上へ');return;}
     const bonus=STATE.floor*10;
     const bonusEl=document.getElementById('surface-bonus-text');
-    if(bonusEl) bonusEl.textContent=`地上に戻ります。フロア進行はリセット。帰還ボーナス: B${STATE.floor}F × 10 = ₪${bonus}`;
+    if(bonusEl) bonusEl.textContent=`帰還ボーナス ₪${bonus} ｜ 今回の探索: 討伐${STATE.sessionKills}体 / ₪+${STATE.sessionMacca} / 最深B${STATE.sessionDeepFloor}F`;
     document.getElementById('surface-confirm-panel').classList.add('active');
   },
   cancelSurface(){
@@ -2079,6 +2138,7 @@ const G={
     const boss=STATE.floor%10===0;
     if(STATE.floorProgress>=5||boss){
       STATE.exploring=false;clearInterval(STATE.exploreTimer);
+      STATE.killStreak=0;
       const e=spawnEnemy(STATE.floor,boss);STATE.currentEnemy=e;
       addLog(boss?`⚠ ボス出現！ ${e.name}が立ちはだかった！`:`! ${e.name}が現れた！`,boss?'boss':'encounter');
       ANIM.encounterAlert(boss);           // 遭遇フラッシュ（赤/金）
@@ -2086,6 +2146,10 @@ const G={
       renderExplore();setTimeout(()=>G._openBattle(e),800);
     }else{
       const gain=rand(3,8+STATE.floor);STATE.macca+=gain;STATE.kills++;
+      STATE.killStreak++;
+      STATE.sessionKills++;
+      STATE.sessionMacca+=gain;
+      if(STATE.floor>STATE.sessionDeepFloor) STATE.sessionDeepFloor=STATE.floor;
       const expGain=rand(2,4+Math.floor(STATE.floor/3));
       STATE.party.filter(d=>d.hp>0).forEach(d=>{
         if(d.lv>=MAX_LEVEL) return;
@@ -2102,31 +2166,55 @@ const G={
         autoTarget.hp=Math.max(1,autoTarget.hp-autoDmg);
       }
       const auto=spawnEnemy(STATE.floor);
-      const drop = ITEM.tryDrop(STATE.floor);
-      if (drop) addLog(`📦 ${drop} を入手した！`, 'success');
-      const slash=['⚔️','🗡️','💥','⚡','🌪️'][rand(0,4)];
-      const dmgNote=autoTarget?`（${autoTarget.name} -${autoDmg}HP）`:'';
-      addLog(`${slash} ${auto.name} を討伐 +${gain}₪ EXP+${expGain} ${dmgNote}`);
-      // ボスフロア接近警告: あと1戦で昇階 & 次フロアがボスの場合
-      if (STATE.floorProgress === 4 && STATE.floor % 10 === 9) {
-        addLog(`⚠ 次戦に勝てば B${STATE.floor + 1}F へ — ボスフロアだ！`, 'warn');
+      const drop=ITEM.tryDrop(STATE.floor);
+      if(drop){
+        if(drop.isRare) addLog(`✨ レア！ ${drop.name} を入手した！`,'success');
+        else addLog(`📦 ${drop.name} を入手した！`,'success');
       }
-      STATE.party.forEach(d => {
-        if (d.hp > 0) {
-          const critical = d.hp <= Math.floor(d.maxHp * 0.25);
-          if (critical && !d._hpCritWarn) { addLog(`🚨 ${d.name} HP危機！（${d.hp}/${d.maxHp}）`, 'warn'); showToast(`🚨 ${d.name} HP危機！`); d._hpCritWarn = true; }
-          else if (!critical) { d._hpCritWarn = false; }
+      // ②探索コメント多様化
+      const[sl,verb]=COMBAT_MSGS[rand(0,COMBAT_MSGS.length-1)];
+      const dmgNote=autoTarget?`（${autoTarget.name} -${autoDmg}HP）`:'';
+      addLog(`${sl} ${auto.name}を${verb} +${gain}₪ EXP+${expGain} ${dmgNote}`);
+      // ①killStreak ボーナス
+      if(STATE.killStreak===3){const b=20;STATE.macca+=b;addLog(`🔥 3連続討伐！ ₪+${b}`,'success');}
+      if(STATE.killStreak===5){const b=50;STATE.macca+=b;addLog(`🔥🔥 5連続討伐！ ₪+${b}`,'success');}
+      if(STATE.killStreak===10){const b=100;STATE.macca+=b;addLog(`💥 10連続討伐！ ₪+${b}`,'success');showToast('💥 10連続討伐ボーナス！');}
+      // ⑩討伐数マイルストーン（累計）
+      if([100,500,1000].includes(STATE.kills)) addLog(`⭐ 累計討伐${STATE.kills}体達成！`,'system');
+      // ③ランダムイベント（5%）
+      if(chance(0.05)){
+        const ev=EXPLORE_EVENTS[rand(0,EXPLORE_EVENTS.length-1)];
+        const evResult=ev.fn();
+        let evText=ev.text;
+        if(ev.id==='bag'&&typeof evResult==='number') evText=`💰 落ちていたマッカ袋を拾った！（₪+${evResult}）`;
+        addLog(evText,ev.type);
+      }
+      // ⑥仲魔ランダムコメント（3%）
+      const commentLead=STATE.party.find(d=>d.hp>0);
+      if(commentLead&&chance(0.03)){
+        const pool2=DEMON_COMMENTS[commentLead.race]??['「…」'];
+        addLog(`${commentLead.emoji} ${commentLead.name}: ${pool2[rand(0,pool2.length-1)]}`,'system');
+      }
+      // ボスフロア接近警告
+      if(STATE.floorProgress===4&&STATE.floor%10===9){
+        addLog(`⚠ 次戦に勝てば B${STATE.floor+1}F へ — ボスフロアだ！`,'warn');
+      }
+      STATE.party.forEach(d=>{
+        if(d.hp>0){
+          const critical=d.hp<=Math.floor(d.maxHp*0.25);
+          if(critical&&!d._hpCritWarn){addLog(`🚨 ${d.name} HP危機！（${d.hp}/${d.maxHp}）`,'warn');showToast(`🚨 ${d.name} HP危機！`);d._hpCritWarn=true;}
+          else if(!critical){d._hpCritWarn=false;}
         }
       });
       // 全員HP15%以下なら自動探索を緊急停止
-      const aliveNow = STATE.party.filter(d => d.hp > 0);
-      if (aliveNow.length && aliveNow.every(d => d.hp / d.maxHp <= 0.15) && STATE.exploring) {
-        STATE.exploring = false; clearInterval(STATE.exploreTimer);
-        addLog('⛔ 全員HP危機 — 自動探索を緊急停止', 'warn');
+      const aliveNow=STATE.party.filter(d=>d.hp>0);
+      if(aliveNow.length&&aliveNow.every(d=>d.hp/d.maxHp<=0.15)&&STATE.exploring){
+        STATE.exploring=false;clearInterval(STATE.exploreTimer);
+        addLog('⛔ 全員HP危機 — 自動探索を緊急停止','warn');
         showToast('⛔ 全員HP危機！探索を停止した');
       }
-      ANIM.logFlash();                     // ログエリア微フラッシュ
-      saveGame(); // ISS-011: 自動討伐結果をセーブ（kills/macca/drop消失防止）
+      ANIM.logFlash();
+      saveGame();
       renderExplore();
     }
   },
